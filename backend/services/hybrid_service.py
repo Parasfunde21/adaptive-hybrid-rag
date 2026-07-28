@@ -1,0 +1,1 @@
+hybrid_score = 0.5 * dense_score + 0.5 * bm25_score
