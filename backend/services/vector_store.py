@@ -1,37 +1,93 @@
 import chromadb
-from embedding_service import generate_embeddings
-from chunk_service import chunk_text
-from pdf_service import extract_text, clean_text
 
-# Create persistent database
+from pdf_service import extract_text, clean_text
+from chunk_service import chunk_text
+from embedding_service import generate_embeddings
+
+
+# Persistent ChromaDB Client
 client = chromadb.PersistentClient(path="../../chroma_db")
 
-collection = client.get_or_create_collection(
-    name="documents"
-)
 
-pdf = "../../data/raw/sample.pdf"
+def store_embeddings(chunks, embeddings, source="document.pdf"):
+    """
+    Store chunks and embeddings into ChromaDB.
+    """
 
-text = extract_text(pdf)
-cleaned = clean_text(text)
-chunks = chunk_text(cleaned)
+    try:
+        client.delete_collection("documents")
+    except:
+        pass
 
-embeddings = generate_embeddings(chunks)
+    collection = client.get_or_create_collection("documents")
 
-# Clear old data (useful while developing)
-try:
-    client.delete_collection("documents")
-except:
-    pass
+    for i, chunk in enumerate(chunks):
+        collection.add(
+            ids=[str(i)],
+            documents=[chunk],
+            embeddings=[embeddings[i].tolist()],
+            metadatas=[{"source": source}]
+        )
 
-collection = client.get_or_create_collection("documents")
+    return collection.count()
 
-for i, chunk in enumerate(chunks):
-    collection.add(
-        ids=[str(i)],
-        documents=[chunk],
-        embeddings=[embeddings[i].tolist()],
-        metadatas=[{"source": "sample.pdf"}]
+
+def load_collection():
+    """
+    Return ChromaDB collection.
+    """
+
+    return client.get_collection("documents")
+
+
+def index_document(pdf_path):
+    """
+    Complete indexing pipeline.
+
+    PDF
+        ↓
+    Extract
+        ↓
+    Clean
+        ↓
+    Chunk
+        ↓
+    Embed
+        ↓
+    Store
+    """
+
+    print("Extracting text...")
+
+    text = extract_text(pdf_path)
+
+    print("Cleaning text...")
+
+    cleaned = clean_text(text)
+
+    print("Creating chunks...")
+
+    chunks = chunk_text(cleaned)
+
+    print("Generating embeddings...")
+
+    embeddings = generate_embeddings(chunks)
+
+    print("Storing into ChromaDB...")
+
+    total = store_embeddings(
+        chunks,
+        embeddings,
+        source=pdf_path.split("/")[-1]
     )
 
-print(f"Stored {collection.count()} chunks successfully!")
+    print(f"\nSuccessfully indexed {total} chunks.")
+
+    return total
+
+
+if __name__ == "__main__":
+
+    pdf = "../../data/raw/sample.pdf"
+
+    index_document(pdf)
