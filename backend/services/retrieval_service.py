@@ -1,49 +1,63 @@
 import chromadb
+
 from sentence_transformers import SentenceTransformer
 
-# Load embedding model only once
-model = SentenceTransformer("all-MiniLM-L6-v2")
+from config.settings import (
+    CHROMA_DB_DIR,
+    COLLECTION_NAME,
+    EMBEDDING_MODEL
+)
 
-# Connect to ChromaDB
-client = chromadb.PersistentClient(path="../../chroma_db")
-collection = client.get_collection("documents")
+model = SentenceTransformer(EMBEDDING_MODEL)
+
+client = chromadb.PersistentClient(
+    path=str(CHROMA_DB_DIR)
+)
+
+collection = client.get_collection(
+    COLLECTION_NAME
+)
 
 
-def dense_search(query: str, top_k: int = 5):
+def dense_search(query: str, top_k: int = 10):
     """
-    Perform semantic search using ChromaDB.
-
-    Args:
-        query (str): User query
-        top_k (int): Number of results
-
     Returns:
-        list: Retrieved documents
-        list: Similarity distances
+        documents,
+        distances,
+        ids
     """
 
-    query_embedding = model.encode(query).tolist()
+    embedding = model.encode(query).tolist()
 
     results = collection.query(
-        query_embeddings=[query_embedding],
+        query_embeddings=[embedding],
         n_results=top_k
     )
 
     documents = results["documents"][0]
     distances = results["distances"][0]
+    ids = results["ids"][0]
 
-    return documents, distances
+    return documents, distances, ids
 
 
 if __name__ == "__main__":
 
-    docs, scores = dense_search("What is Agile Scrum?")
+    query = input("Enter Query: ")
 
-    print("\nTop Results\n")
+    docs, distances, ids = dense_search(query)
 
-    for i, doc in enumerate(docs):
+    print("\nTop Dense Results\n")
 
-        print(f"\nResult {i+1}")
-        print("-" * 60)
-        print(doc[:300])
-        print(f"\nDistance: {scores[i]}")
+    for rank, (doc, distance, idx) in enumerate(
+        zip(docs, distances, ids),
+        start=1
+    ):
+
+        print("=" * 80)
+        print(f"Rank      : {rank}")
+        print(f"ID        : {idx}")
+        print(f"Distance  : {distance:.6f}")
+        print("-" * 80)
+        print(doc[:500])
+        print()

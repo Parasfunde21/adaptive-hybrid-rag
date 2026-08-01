@@ -1,96 +1,130 @@
-from retrieval_service import dense_search
-from bm25_service import bm25_search
+from services.retrieval_service import dense_search
+from services.bm25_service import bm25_search
+from services.adaptive_weight import adaptive_predictor
+from services.fusion_service import fusion_service
 
 
-def reciprocal_rank_fusion(dense_docs, bm25_docs, k=60):
-    """
-    Combine Dense Retrieval and BM25 using Reciprocal Rank Fusion (RRF).
+class AdaptiveHybridRetriever:
 
-    Args:
-        dense_docs: Documents returned by dense retrieval
-        bm25_docs: Documents returned by BM25 retrieval
-        k: RRF constant (default = 60)
+    def __init__(self):
+        pass
 
-    Returns:
-        List of dictionaries sorted by RRF score.
-    """
+    def search(
+        self,
+        query,
+        top_k=10
+    ):
 
-    scores = {}
+        # -----------------------------
+        # Predict adaptive weights
+        # -----------------------------
+        prediction = adaptive_predictor.predict(query)
 
-    # Dense Retrieval Contribution
-    for rank, doc in enumerate(dense_docs):
-        if doc not in scores:
-            scores[doc] = {
-                "score": 0.0,
-                "sources": []
-            }
+        bm25_weight = prediction["bm25_weight"]
+        dense_weight = prediction["dense_weight"]
 
-        scores[doc]["score"] += 1 / (k + rank + 1)
-        scores[doc]["sources"].append("Dense")
+        # -----------------------------
+        # Dense Retrieval
+        # -----------------------------
+        dense_docs, dense_distances, _ = dense_search(
+            query=query,
+            top_k=top_k
+        )
 
-    # BM25 Contribution
-    for rank, doc in enumerate(bm25_docs):
-        if doc not in scores:
-            scores[doc] = {
-                "score": 0.0,
-                "sources": []
-            }
+        # -----------------------------
+        # BM25 Retrieval
+        # -----------------------------
+        bm25_docs, bm25_scores, _ = bm25_search(
+            query=query,
+            top_k=top_k
+        )
 
-        scores[doc]["score"] += 1 / (k + rank + 1)
-        scores[doc]["sources"].append("BM25")
+        # -----------------------------
+        # Adaptive Score Fusion
+        # -----------------------------
+        fused_results = fusion_service.fuse(
 
-    # Sort by descending score
-    ranked_results = sorted(
-        scores.items(),
-        key=lambda x: x[1]["score"],
-        reverse=True
+            dense_docs=dense_docs,
+            dense_distances=dense_distances,
+
+            bm25_docs=bm25_docs,
+            bm25_scores=bm25_scores,
+
+            dense_weight=dense_weight,
+            bm25_weight=bm25_weight
+
+        )
+
+        return {
+
+            "query": query,
+
+            "weights": {
+
+                "bm25": bm25_weight,
+
+                "dense": dense_weight
+
+            },
+
+            "results": fused_results[:top_k]
+
+        }
+
+
+retriever = AdaptiveHybridRetriever()
+
+
+def hybrid_search(
+    query,
+    top_k=10
+):
+    return retriever.search(
+        query=query,
+        top_k=top_k
     )
-
-    results = []
-
-    for document, info in ranked_results:
-        results.append({
-            "document": document,
-            "rrf_score": round(info["score"], 6),
-            "retrieved_from": ", ".join(info["sources"])
-        })
-
-    return results
-
-
-def hybrid_search(query: str, top_k: int = 5):
-    """
-    Perform Hybrid Retrieval using:
-        1. Dense Retrieval
-        2. BM25 Retrieval
-        3. Reciprocal Rank Fusion
-    """
-
-    dense_docs, _ = dense_search(query, top_k)
-    bm25_docs, _ = bm25_search(query, top_k)
-
-    fused_results = reciprocal_rank_fusion(
-        dense_docs,
-        bm25_docs
-    )
-
-    return fused_results[:top_k]
 
 
 if __name__ == "__main__":
 
-    query = input("Enter your query: ")
+    while True:
 
-    results = hybrid_search(query)
+        query = input("\nQuery : ")
 
-    print("\nHybrid Retrieval Results\n")
+        if query.lower() == "exit":
+            break
 
-    for i, result in enumerate(results, start=1):
+        response = hybrid_search(query)
 
-        print("=" * 80)
-        print(f"Rank : {i}")
-        print(f"RRF Score : {result['rrf_score']}")
-        print(f"Retrieved From : {result['retrieved_from']}")
-        print("-" * 80)
-        print(result["document"][:500])
-        print()
+        print("\nAdaptive Weights")
+        print("-" * 50)
+
+        print(
+            f"BM25 Weight : {response['weights']['bm25']}"
+        )
+
+        print(
+            f"Dense Weight: {response['weights']['dense']}"
+        )
+
+        print("\nRetrieved Documents")
+        print("=" * 100)
+
+        for rank, item in enumerate(
+            response["results"],
+            start=1
+        ):
+
+            print(f"\nRank {rank}")
+
+            print(
+                f"Fusion Score : {item['score']}"
+            )
+
+            print(
+                f"Retrieved By : {item['source']}"
+            )
+
+            print("-" * 100)
+
+            print(item["document"][:500])

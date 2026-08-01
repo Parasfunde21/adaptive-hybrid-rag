@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual Environment
+venv/
+.venv/
+
+# ChromaDB
+chroma_db/
+
+# Models
+*.bin
+*.pt
+*.onnx
+
+# Ollama / ML Models
+backend/models/*.pkl
+backend/models/*.joblib
+
+# Training Outputs
+backend/training/training_dataset.csv
+
+# Environment
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
