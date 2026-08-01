@@ -1,6 +1,13 @@
 import chromadb
 
-client = chromadb.PersistentClient(path="../../chroma_db")
+from config.settings import (
+    CHROMA_DB_DIR,
+    COLLECTION_NAME
+)
+
+client = chromadb.PersistentClient(
+    path=str(CHROMA_DB_DIR)
+)
 
 
 def get_all_documents():
@@ -8,7 +15,9 @@ def get_all_documents():
     Load all indexed documents from ChromaDB.
     """
 
-    collection = client.get_collection("documents")
+    collection = client.get_collection(
+        COLLECTION_NAME
+    )
 
     results = collection.get()
 
@@ -17,10 +26,12 @@ def get_all_documents():
 
 if __name__ == "__main__":
 
-    documents = get_all_documents()
+    print("Using ChromaDB:", CHROMA_DB_DIR)
 
-    print(f"Total Documents: {len(documents)}")
+    docs = get_all_documents()
+
+    print(f"\nTotal Documents: {len(docs)}")
 
     print("\nFirst Document:\n")
 
-    print(documents[0][:300])
+    print(docs[0][:500])
