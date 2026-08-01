@@ -15,33 +15,33 @@ class AdaptiveHybridRetriever:
         top_k=10
     ):
 
-        # -----------------------------
-        # Predict adaptive weights
-        # -----------------------------
+        # ----------------------------------
+        # Predict Adaptive Weights
+        # ----------------------------------
         prediction = adaptive_predictor.predict(query)
 
         bm25_weight = prediction["bm25_weight"]
         dense_weight = prediction["dense_weight"]
 
-        # -----------------------------
+        # ----------------------------------
         # Dense Retrieval
-        # -----------------------------
+        # ----------------------------------
         dense_docs, dense_distances, _ = dense_search(
             query=query,
             top_k=top_k
         )
 
-        # -----------------------------
+        # ----------------------------------
         # BM25 Retrieval
-        # -----------------------------
+        # ----------------------------------
         bm25_docs, bm25_scores, _ = bm25_search(
             query=query,
             top_k=top_k
         )
 
-        # -----------------------------
+        # ----------------------------------
         # Adaptive Score Fusion
-        # -----------------------------
+        # ----------------------------------
         fused_results = fusion_service.fuse(
 
             dense_docs=dense_docs,
@@ -79,9 +79,13 @@ def hybrid_search(
     query,
     top_k=10
 ):
+
     return retriever.search(
+
         query=query,
+
         top_k=top_k
+
     )
 
 
@@ -94,17 +98,20 @@ if __name__ == "__main__":
         if query.lower() == "exit":
             break
 
-        response = hybrid_search(query)
+        response = hybrid_search(
+            query=query,
+            top_k=10
+        )
 
         print("\nAdaptive Weights")
-        print("-" * 50)
+        print("=" * 80)
 
         print(
-            f"BM25 Weight : {response['weights']['bm25']}"
+            f"BM25 Weight : {response['weights']['bm25']:.4f}"
         )
 
         print(
-            f"Dense Weight: {response['weights']['dense']}"
+            f"Dense Weight: {response['weights']['dense']:.4f}"
         )
 
         print("\nRetrieved Documents")
@@ -115,14 +122,30 @@ if __name__ == "__main__":
             start=1
         ):
 
-            print(f"\nRank {rank}")
+            print(f"\nRank : {rank}")
 
             print(
-                f"Fusion Score : {item['score']}"
+                f"Fusion Score     : {item['fusion_score']:.6f}"
             )
 
             print(
-                f"Retrieved By : {item['source']}"
+                f"Retrieved By     : {', '.join(item['retrieved_by'])}"
+            )
+
+            print(
+                f"Dense Similarity : {item['dense_similarity']}"
+            )
+
+            print(
+                f"BM25 Score       : {item['bm25_score']}"
+            )
+
+            print(
+                f"Dense Rank       : {item['dense_rank']}"
+            )
+
+            print(
+                f"BM25 Rank        : {item['bm25_rank']}"
             )
 
             print("-" * 100)
