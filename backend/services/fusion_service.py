@@ -6,12 +6,8 @@ class AdaptiveScoreFusion:
     """
     Adaptive Score Fusion (ASF)
 
-    Uses:
-        • Normalized BM25 scores
-        • Normalized Dense similarities
-        • ML-predicted adaptive weights
-
-    instead of Reciprocal Rank Fusion.
+    Combines normalized BM25 scores and normalized
+    Dense similarities using ML-predicted weights.
     """
 
     def normalize(self, scores):
@@ -27,11 +23,7 @@ class AdaptiveScoreFusion:
         if maximum == minimum:
             return np.ones_like(scores)
 
-        return (
-            scores - minimum
-        ) / (
-            maximum - minimum
-        )
+        return (scores - minimum) / (maximum - minimum)
 
     def dense_similarity(self, distances):
 
@@ -69,15 +61,15 @@ class AdaptiveScoreFusion:
 
         results = {}
 
-        # ----------------------------
-        # Dense Contribution
-        # ----------------------------
+        # -----------------------------------
+        # Dense Retrieval Contribution
+        # -----------------------------------
 
-        for doc, score in zip(
+        for rank, (doc, similarity) in enumerate(
 
-            dense_docs,
+            zip(dense_docs, dense_scores),
 
-            dense_scores
+            start=1
 
         ):
 
@@ -85,35 +77,47 @@ class AdaptiveScoreFusion:
 
                 results[doc] = {
 
-                    "score": 0,
+                    "document": doc,
 
-                    "source": []
+                    "fusion_score": 0.0,
+
+                    "retrieved_by": [],
+
+                    "dense_similarity": None,
+
+                    "bm25_score": None,
+
+                    "dense_rank": None,
+
+                    "bm25_rank": None
 
                 }
 
-            results[doc]["score"] += (
+            results[doc]["fusion_score"] += (
 
                 dense_weight *
 
-                float(score)
+                float(similarity)
 
             )
 
-            results[doc]["source"].append(
+            results[doc]["dense_similarity"] = float(similarity)
 
+            results[doc]["dense_rank"] = rank
+
+            results[doc]["retrieved_by"].append(
                 "Dense"
-
             )
 
-        # ----------------------------
+        # -----------------------------------
         # BM25 Contribution
-        # ----------------------------
+        # -----------------------------------
 
-        for doc, score in zip(
+        for rank, (doc, score) in enumerate(
 
-            bm25_docs,
+            zip(bm25_docs, bm25_scores),
 
-            bm25_scores
+            start=1
 
         ):
 
@@ -121,13 +125,23 @@ class AdaptiveScoreFusion:
 
                 results[doc] = {
 
-                    "score": 0,
+                    "document": doc,
 
-                    "source": []
+                    "fusion_score": 0.0,
+
+                    "retrieved_by": [],
+
+                    "dense_similarity": None,
+
+                    "bm25_score": None,
+
+                    "dense_rank": None,
+
+                    "bm25_rank": None
 
                 }
 
-            results[doc]["score"] += (
+            results[doc]["fusion_score"] += (
 
                 bm25_weight *
 
@@ -135,47 +149,35 @@ class AdaptiveScoreFusion:
 
             )
 
-            results[doc]["source"].append(
+            results[doc]["bm25_score"] = float(score)
 
+            results[doc]["bm25_rank"] = rank
+
+            results[doc]["retrieved_by"].append(
                 "BM25"
-
             )
 
         ranked = sorted(
 
-            results.items(),
+            results.values(),
 
-            key=lambda x: x[1]["score"],
+            key=lambda x: x["fusion_score"],
 
             reverse=True
 
         )
 
-        output = []
+        for item in ranked:
 
-        for doc, info in ranked:
+            item["fusion_score"] = round(
 
-            output.append({
+                item["fusion_score"],
 
-                "document": doc,
+                6
 
-                "score": round(
+            )
 
-                    info["score"],
-
-                    6
-
-                ),
-
-                "source": ", ".join(
-
-                    info["source"]
-
-                )
-
-            })
-
-        return output
+        return ranked
 
 
 fusion_service = AdaptiveScoreFusion()

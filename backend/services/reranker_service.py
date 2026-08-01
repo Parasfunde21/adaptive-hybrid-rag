@@ -29,6 +29,10 @@ class CrossEncoderReranker:
 
             return []
 
+        # -----------------------------
+        # Build (query, document) pairs
+        # -----------------------------
+
         pairs = [
 
             (query, item["document"])
@@ -37,9 +41,13 @@ class CrossEncoderReranker:
 
         ]
 
+        # -----------------------------
+        # Cross Encoder Prediction
+        # -----------------------------
+
         scores = self.model.predict(pairs)
 
-        ranked = []
+        reranked = []
 
         for item, score in zip(
 
@@ -49,19 +57,17 @@ class CrossEncoderReranker:
 
         ):
 
-            ranked.append({
+            new_item = item.copy()
 
-                "document": item["document"],
+            new_item["cross_score"] = float(score)
 
-                "fusion_score": item["score"],
+            reranked.append(new_item)
 
-                "cross_score": float(score),
+        # -----------------------------
+        # Sort by Cross Score
+        # -----------------------------
 
-                "source": item["source"]
-
-            })
-
-        ranked.sort(
+        reranked.sort(
 
             key=lambda x: x["cross_score"],
 
@@ -69,7 +75,21 @@ class CrossEncoderReranker:
 
         )
 
-        return ranked[:top_k]
+        # -----------------------------
+        # Assign Cross Rank
+        # -----------------------------
+
+        for rank, item in enumerate(
+
+            reranked,
+
+            start=1
+
+        ):
+
+            item["cross_rank"] = rank
+
+        return reranked[:top_k]
 
 
 reranker = CrossEncoderReranker()
@@ -79,44 +99,47 @@ if __name__ == "__main__":
 
     from services.hybrid_service import hybrid_search
 
-    query = input("Query : ")
+    while True:
 
-    retrieved = hybrid_search(
+        query = input("\nQuery : ")
 
-        query,
+        if query.lower() == "exit":
+            break
 
-        top_k=10
+        retrieval = hybrid_search(
 
-    )["results"]
+            query=query,
 
-    results = reranker.rerank(
+            top_k=10
 
-        query,
+        )
 
-        retrieved,
+        reranked = reranker.rerank(
 
-        top_k=5
+            query=query,
 
-    )
+            retrieved_documents=retrieval["results"],
 
-    print()
+            top_k=5
 
-    for i, item in enumerate(
+        )
 
-        results,
-
-        start=1
-
-    ):
-
+        print("\nReranked Results")
         print("=" * 100)
 
-        print(f"Rank : {i}")
+        for item in reranked:
 
-        print(f"Cross Score : {item['cross_score']:.4f}")
+            print()
 
-        print(f"Fusion Score: {item['fusion_score']:.4f}")
+            print(f"Cross Rank        : {item['cross_rank']}")
+            print(f"Cross Score       : {item['cross_score']:.4f}")
+            print(f"Fusion Score      : {item['fusion_score']:.4f}")
+            print(f"Retrieved By      : {', '.join(item['retrieved_by'])}")
+            print(f"Dense Similarity  : {item['dense_similarity']}")
+            print(f"BM25 Score        : {item['bm25_score']}")
+            print(f"Dense Rank        : {item['dense_rank']}")
+            print(f"BM25 Rank         : {item['bm25_rank']}")
 
-        print()
+            print("-" * 100)
 
-        print(item["document"][:500])
+            print(item["document"][:500])
