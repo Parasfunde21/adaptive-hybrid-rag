@@ -20,8 +20,10 @@ chroma_db/
 backend/models/*.pkl
 backend/models/*.joblib
 
+
 # Training Outputs
-backend/training/training_dataset.csv
+backend/training/*.csv
+backend/evaluation/*.csv
 
 # Environment
 .env
