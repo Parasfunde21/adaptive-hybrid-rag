@@ -1,6 +1,14 @@
 from services.retrieval_service import dense_search
 from services.bm25_service import bm25_search
-from services.adaptive_weight import adaptive_predictor
+
+from services.adaptive_predictor_v3 import (
+    adaptive_predictor_v3
+)
+
+from services.retrieval_feature_service import (
+    retrieval_feature_service
+)
+
 from services.fusion_service import fusion_service
 
 
@@ -15,45 +23,85 @@ class AdaptiveHybridRetriever:
         top_k=10
     ):
 
-        # ----------------------------------
-        # Predict Adaptive Weights
-        # ----------------------------------
-        prediction = adaptive_predictor.predict(query)
+        # =================================================
+        # 1. Retrieve ONCE
+        # =================================================
 
-        bm25_weight = prediction["bm25_weight"]
-        dense_weight = prediction["dense_weight"]
-
-        # ----------------------------------
-        # Dense Retrieval
-        # ----------------------------------
-        dense_docs, dense_distances, _ = dense_search(
-            query=query,
-            top_k=top_k
+        dense_docs, dense_distances, _ = (
+            dense_search(
+                query=query,
+                top_k=top_k
+            )
         )
 
-        # ----------------------------------
-        # BM25 Retrieval
-        # ----------------------------------
-        bm25_docs, bm25_scores, _ = bm25_search(
-            query=query,
-            top_k=top_k
+        bm25_docs, bm25_scores, _ = (
+            bm25_search(
+                query=query,
+                top_k=top_k
+            )
         )
 
-        # ----------------------------------
-        # Adaptive Score Fusion
-        # ----------------------------------
+        # =================================================
+        # 2. Extract retrieval behavior
+        # =================================================
+
+        retrieval_features = (
+            retrieval_feature_service.extract(
+
+                bm25_scores=bm25_scores,
+
+                dense_distances=dense_distances,
+
+                bm25_docs=bm25_docs,
+
+                dense_docs=dense_docs
+            )
+        )
+
+        # =================================================
+        # 3. Predict adaptive weights
+        # =================================================
+
+        prediction = (
+            adaptive_predictor_v3.predict(
+
+                query=query,
+
+                retrieval_features=
+                    retrieval_features
+            )
+        )
+
+        bm25_weight = prediction[
+            "bm25_weight"
+        ]
+
+        dense_weight = prediction[
+            "dense_weight"
+        ]
+
+        # =================================================
+        # 4. Adaptive Score Fusion
+        # =================================================
+
         fused_results = fusion_service.fuse(
 
             dense_docs=dense_docs,
+
             dense_distances=dense_distances,
 
             bm25_docs=bm25_docs,
+
             bm25_scores=bm25_scores,
 
             dense_weight=dense_weight,
-            bm25_weight=bm25_weight
 
+            bm25_weight=bm25_weight
         )
+
+        # =================================================
+        # 5. Return
+        # =================================================
 
         return {
 
@@ -61,14 +109,19 @@ class AdaptiveHybridRetriever:
 
             "weights": {
 
-                "bm25": bm25_weight,
+                "bm25":
+                    bm25_weight,
 
-                "dense": dense_weight
+                "dense":
+                    dense_weight
 
             },
 
-            "results": fused_results[:top_k]
+            "model":
+                prediction["model"],
 
+            "results":
+                fused_results[:top_k]
         }
 
 
@@ -81,11 +134,8 @@ def hybrid_search(
 ):
 
     return retriever.search(
-
         query=query,
-
         top_k=top_k
-
     )
 
 
@@ -93,61 +143,62 @@ if __name__ == "__main__":
 
     while True:
 
-        query = input("\nQuery : ")
+        query = input(
+            "\nQuery : "
+        )
 
         if query.lower() == "exit":
             break
 
         response = hybrid_search(
-            query=query,
-            top_k=10
+            query
         )
 
-        print("\nAdaptive Weights")
+        print()
+        print("=" * 80)
+        print("Adaptive Weights")
         print("=" * 80)
 
         print(
-            f"BM25 Weight : {response['weights']['bm25']:.4f}"
+            f"BM25 Weight : "
+            f"{response['weights']['bm25']}"
         )
 
         print(
-            f"Dense Weight: {response['weights']['dense']:.4f}"
+            f"Dense Weight: "
+            f"{response['weights']['dense']}"
         )
 
-        print("\nRetrieved Documents")
-        print("=" * 100)
+        print(
+            f"Model       : "
+            f"{response['model']}"
+        )
+
+        print()
+        print("Retrieved Documents")
+        print("=" * 80)
 
         for rank, item in enumerate(
             response["results"],
             start=1
         ):
 
-            print(f"\nRank : {rank}")
-
             print(
-                f"Fusion Score     : {item['fusion_score']:.6f}"
+                f"\nRank : {rank}"
             )
 
             print(
-                f"Retrieved By     : {', '.join(item['retrieved_by'])}"
+                f"Fusion Score : "
+                f"{item['fusion_score']}"
             )
 
             print(
-                f"Dense Similarity : {item['dense_similarity']}"
+                f"Retrieved By : "
+                f"{', '.join(item['retrieved_by'])}"
             )
+
+            print("-" * 80)
 
             print(
-                f"BM25 Score       : {item['bm25_score']}"
+                item["document"][:500]
             )
-
-            print(
-                f"Dense Rank       : {item['dense_rank']}"
-            )
-
-            print(
-                f"BM25 Rank        : {item['bm25_rank']}"
-            )
-
-            print("-" * 100)
-
-            print(item["document"][:500])
