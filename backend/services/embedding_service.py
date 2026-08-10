@@ -1,6 +1,6 @@
 from sentence_transformers import SentenceTransformer
-from chunk_service import chunk_text
-from pdf_service import extract_text, clean_text
+from services.chunk_service import chunk_text
+from services.pdf_service import extract_text, clean_text
 
 # Load embedding model once
 model = SentenceTransformer("all-MiniLM-L6-v2")

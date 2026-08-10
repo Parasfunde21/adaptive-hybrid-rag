@@ -35,3 +35,6 @@ backend/evaluation/*.csv
 # OS
 .DS_Store
 Thumbs.db
+
+# Runtime Logs
+backend/logs/

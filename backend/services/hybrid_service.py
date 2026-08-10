@@ -1,5 +1,13 @@
-from services.retrieval_service import dense_search
-from services.bm25_service import bm25_search
+import time
+
+
+from services.retrieval_service import (
+    dense_search
+)
+
+from services.bm25_service import (
+    bm25_search
+)
 
 from services.adaptive_predictor_v3 import (
     adaptive_predictor_v3
@@ -9,7 +17,18 @@ from services.retrieval_feature_service import (
     retrieval_feature_service
 )
 
-from services.fusion_service import fusion_service
+from services.fusion_service import (
+    fusion_service
+)
+
+from services.logging_service import (
+    logging_service
+)
+
+
+# ============================================================
+# Adaptive Hybrid Retriever
+# ============================================================
 
 
 class AdaptiveHybridRetriever:
@@ -17,35 +36,73 @@ class AdaptiveHybridRetriever:
     def __init__(self):
         pass
 
+
+    # ========================================================
+    # Adaptive Hybrid Search
+    # ========================================================
+
     def search(
         self,
         query,
         top_k=10
     ):
 
-        # =================================================
-        # 1. Retrieve ONCE
-        # =================================================
-
-        dense_docs, dense_distances, _ = (
-            dense_search(
-                query=query,
-                top_k=top_k
-            )
+        total_start = (
+            time.perf_counter()
         )
 
-        bm25_docs, bm25_scores, _ = (
-            bm25_search(
-                query=query,
-                top_k=top_k
-            )
+
+        # ====================================================
+        # 1. BM25 + Dense Retrieval
+        # ====================================================
+
+        retrieval_start = (
+            time.perf_counter()
         )
 
-        # =================================================
-        # 2. Extract retrieval behavior
-        # =================================================
+
+        (
+            dense_docs,
+            dense_distances,
+            dense_ids,
+            dense_metadatas
+        ) = dense_search(
+
+            query=query,
+
+            top_k=top_k
+        )
+
+
+        (
+            bm25_docs,
+            bm25_scores,
+            bm25_ids,
+            bm25_metadatas
+        ) = bm25_search(
+
+            query=query,
+
+            top_k=top_k
+        )
+
+
+        retrieval_latency = (
+
+            time.perf_counter()
+
+            -
+
+            retrieval_start
+        )
+
+
+        # ====================================================
+        # 2. Extract Retrieval Features
+        # ====================================================
 
         retrieval_features = (
+
             retrieval_feature_service.extract(
 
                 bm25_scores=bm25_scores,
@@ -55,22 +112,27 @@ class AdaptiveHybridRetriever:
                 bm25_docs=bm25_docs,
 
                 dense_docs=dense_docs
+
             )
         )
 
-        # =================================================
-        # 3. Predict adaptive weights
-        # =================================================
+
+        # ====================================================
+        # 3. V3 Adaptive Weight Prediction
+        # ====================================================
 
         prediction = (
+
             adaptive_predictor_v3.predict(
 
                 query=query,
 
                 retrieval_features=
                     retrieval_features
+
             )
         )
+
 
         bm25_weight = prediction[
             "bm25_weight"
@@ -80,32 +142,213 @@ class AdaptiveHybridRetriever:
             "dense_weight"
         ]
 
-        # =================================================
+        model_name = prediction[
+            "model"
+        ]
+
+
+        # ====================================================
         # 4. Adaptive Score Fusion
-        # =================================================
+        # ====================================================
 
-        fused_results = fusion_service.fuse(
-
-            dense_docs=dense_docs,
-
-            dense_distances=dense_distances,
-
-            bm25_docs=bm25_docs,
-
-            bm25_scores=bm25_scores,
-
-            dense_weight=dense_weight,
-
-            bm25_weight=bm25_weight
+        fusion_start = (
+            time.perf_counter()
         )
 
-        # =================================================
-        # 5. Return
-        # =================================================
+
+        fused_results = (
+
+            fusion_service.fuse(
+
+                dense_docs=dense_docs,
+
+                dense_distances=
+                    dense_distances,
+
+                dense_ids=dense_ids,
+
+                dense_metadatas=
+                    dense_metadatas,
+
+                bm25_docs=bm25_docs,
+
+                bm25_scores=bm25_scores,
+
+                bm25_ids=bm25_ids,
+
+                bm25_metadatas=bm25_metadatas,
+
+                dense_weight=
+                    dense_weight,
+
+                bm25_weight=
+                    bm25_weight
+
+            )
+        )
+
+
+        fusion_latency = (
+
+            time.perf_counter()
+
+            -
+
+            fusion_start
+        )
+
+
+        # ====================================================
+        # 5. Final Results
+        # ====================================================
+
+        final_results = (
+
+            fused_results[
+                :top_k
+            ]
+        )
+
+
+        # ====================================================
+        # 6. Add Citation Fields
+        # ====================================================
+
+        for rank, item in enumerate(
+
+            final_results,
+
+            start=1
+        ):
+
+            metadata = (
+                item.get(
+                    "metadata",
+                    {}
+                )
+                or {}
+            )
+
+
+            item[
+                "rank"
+            ] = rank
+
+
+            item[
+                "source"
+            ] = metadata.get(
+                "source"
+            )
+
+
+            item[
+                "document_id"
+            ] = metadata.get(
+                "document_id"
+            )
+
+
+            item[
+                "chunk_id"
+            ] = metadata.get(
+                "chunk_id"
+            )
+
+
+            item[
+                "chunk_index"
+            ] = metadata.get(
+                "chunk_index"
+            )
+
+
+            # Citation label for downstream
+            # answer generation.
+
+            item[
+                "citation"
+            ] = {
+
+                "source":
+                    metadata.get(
+                        "source"
+                    ),
+
+                "document_id":
+                    metadata.get(
+                        "document_id"
+                    ),
+
+                "chunk_id":
+                    metadata.get(
+                        "chunk_id"
+                    ),
+
+                "chunk_index":
+                    metadata.get(
+                        "chunk_index"
+                    )
+            }
+
+
+        # ====================================================
+        # 7. Total Latency
+        # ====================================================
+
+        total_latency = (
+
+            time.perf_counter()
+
+            -
+
+            total_start
+        )
+
+
+        # ====================================================
+        # 8. Logging
+        # ====================================================
+
+        logging_service.log_retrieval(
+
+            query=query,
+
+            bm25_weight=
+                bm25_weight,
+
+            dense_weight=
+                dense_weight,
+
+            retrieval_features=
+                retrieval_features,
+
+            model_name=
+                model_name,
+
+            retrieval_latency=
+                retrieval_latency,
+
+            fusion_latency=
+                fusion_latency,
+
+            total_latency=
+                total_latency,
+
+            result_count=
+                len(final_results)
+
+        )
+
+
+        # ====================================================
+        # 9. Return Response
+        # ====================================================
 
         return {
 
-            "query": query,
+            "query":
+                query,
 
             "weights": {
 
@@ -118,14 +361,27 @@ class AdaptiveHybridRetriever:
             },
 
             "model":
-                prediction["model"],
+                model_name,
 
             "results":
-                fused_results[:top_k]
+                final_results
+
         }
 
 
-retriever = AdaptiveHybridRetriever()
+# ============================================================
+# Global Retriever
+# ============================================================
+
+
+retriever = (
+    AdaptiveHybridRetriever()
+)
+
+
+# ============================================================
+# Public Function
+# ============================================================
 
 
 def hybrid_search(
@@ -134,12 +390,37 @@ def hybrid_search(
 ):
 
     return retriever.search(
+
         query=query,
+
         top_k=top_k
+
     )
 
 
+# ============================================================
+# Manual Testing
+# ============================================================
+
+
 if __name__ == "__main__":
+
+    print(
+        "=" * 80
+    )
+
+    print(
+        "ADAPTIVE HYBRID RAG — V3"
+    )
+
+    print(
+        "=" * 80
+    )
+
+    print(
+        "Type 'exit' to stop."
+    )
+
 
     while True:
 
@@ -147,58 +428,158 @@ if __name__ == "__main__":
             "\nQuery : "
         )
 
-        if query.lower() == "exit":
-            break
 
-        response = hybrid_search(
-            query
-        )
-
-        print()
-        print("=" * 80)
-        print("Adaptive Weights")
-        print("=" * 80)
-
-        print(
-            f"BM25 Weight : "
-            f"{response['weights']['bm25']}"
-        )
-
-        print(
-            f"Dense Weight: "
-            f"{response['weights']['dense']}"
-        )
-
-        print(
-            f"Model       : "
-            f"{response['model']}"
-        )
-
-        print()
-        print("Retrieved Documents")
-        print("=" * 80)
-
-        for rank, item in enumerate(
-            response["results"],
-            start=1
+        if (
+            query.lower().strip()
+            == "exit"
         ):
 
+            break
+
+
+        if not query.strip():
+
             print(
-                f"\nRank : {rank}"
+                "Please enter a query."
+            )
+
+            continue
+
+
+        try:
+
+            response = hybrid_search(
+
+                query=query,
+
+                top_k=10
+
+            )
+
+
+            print()
+
+            print(
+                "=" * 80
             )
 
             print(
-                f"Fusion Score : "
-                f"{item['fusion_score']}"
+                "ADAPTIVE WEIGHTS"
             )
 
             print(
-                f"Retrieved By : "
-                f"{', '.join(item['retrieved_by'])}"
+                "=" * 80
             )
 
-            print("-" * 80)
 
             print(
-                item["document"][:500]
+                f"BM25 Weight : "
+                f"{response['weights']['bm25']}"
+            )
+
+            print(
+                f"Dense Weight: "
+                f"{response['weights']['dense']}"
+            )
+
+            print(
+                f"Model       : "
+                f"{response['model']}"
+            )
+
+
+            print()
+
+            print(
+                "RETRIEVED DOCUMENTS"
+            )
+
+            print(
+                "=" * 80
+            )
+
+
+            for item in response[
+                "results"
+            ]:
+
+                print()
+
+                print(
+                    f"Rank          : "
+                    f"{item.get('rank')}"
+                )
+
+                print(
+                    f"Fusion Score  : "
+                    f"{item.get('fusion_score', 0)}"
+                )
+
+                print(
+                    f"Retrieved By  : "
+                    f"{', '.join(item.get('retrieved_by', []))}"
+                )
+
+                print(
+                    f"Dense Sim     : "
+                    f"{item.get('dense_similarity', 0)}"
+                )
+
+                print(
+                    f"BM25 Score    : "
+                    f"{item.get('bm25_score', 0)}"
+                )
+
+                print(
+                    f"Dense Rank    : "
+                    f"{item.get('dense_rank', '-')}"
+                )
+
+                print(
+                    f"BM25 Rank     : "
+                    f"{item.get('bm25_rank', '-')}"
+                )
+
+                print(
+                    f"Source        : "
+                    f"{item.get('source')}"
+                )
+
+                print(
+                    f"Document ID   : "
+                    f"{item.get('document_id')}"
+                )
+
+                print(
+                    f"Chunk ID      : "
+                    f"{item.get('chunk_id')}"
+                )
+
+                print(
+                    f"Chunk Index   : "
+                    f"{item.get('chunk_index')}"
+                )
+
+                print(
+                    "-" * 80
+                )
+
+                print(
+                    item.get(
+                        "document",
+                        ""
+                    )[:500]
+                )
+
+
+        except Exception as error:
+
+            print()
+
+            print(
+                "ERROR:"
+            )
+
+            print(
+                str(error)
             )

@@ -8,56 +8,161 @@ from config.settings import (
     EMBEDDING_MODEL
 )
 
-model = SentenceTransformer(EMBEDDING_MODEL)
+
+# ============================================================
+# Embedding Model
+# ============================================================
+
+model = SentenceTransformer(
+    EMBEDDING_MODEL
+)
+
+
+# ============================================================
+# ChromaDB
+# ============================================================
 
 client = chromadb.PersistentClient(
     path=str(CHROMA_DB_DIR)
 )
+
 
 collection = client.get_collection(
     COLLECTION_NAME
 )
 
 
-def dense_search(query: str, top_k: int = 10):
+# ============================================================
+# Dense Search
+# ============================================================
+
+def dense_search(
+    query: str,
+    top_k: int = 10
+):
+
     """
+    Dense semantic retrieval.
+
     Returns:
-        documents,
-        distances,
+
+        documents
+        distances
         ids
+        metadatas
     """
 
-    embedding = model.encode(query).tolist()
+    embedding = model.encode(
+        query
+    ).tolist()
+
 
     results = collection.query(
-        query_embeddings=[embedding],
-        n_results=top_k
+
+        query_embeddings=[
+            embedding
+        ],
+
+        n_results=top_k,
+
+        include=[
+            "documents",
+            "distances",
+            "metadatas"
+        ]
     )
 
+
     documents = results["documents"][0]
+
     distances = results["distances"][0]
+
     ids = results["ids"][0]
 
-    return documents, distances, ids
+    metadatas = results["metadatas"][0]
 
+
+    return (
+        documents,
+        distances,
+        ids,
+        metadatas
+    )
+
+
+# ============================================================
+# Test
+# ============================================================
 
 if __name__ == "__main__":
 
-    query = input("Enter Query: ")
+    query = input(
+        "Enter Query: "
+    )
 
-    docs, distances, ids = dense_search(query)
 
-    print("\nTop Dense Results\n")
+    docs, distances, ids, metadatas = dense_search(
+        query
+    )
 
-    for rank, (doc, distance, idx) in enumerate(
-        zip(docs, distances, ids),
+
+    print(
+        "\nTop Dense Results\n"
+    )
+
+
+    for rank, (
+        doc,
+        distance,
+        idx,
+        metadata
+
+    ) in enumerate(
+
+        zip(
+            docs,
+            distances,
+            ids,
+            metadatas
+        ),
+
         start=1
     ):
 
-        print("=" * 80)
-        print(f"Rank      : {rank}")
-        print(f"ID        : {idx}")
-        print(f"Distance  : {distance:.6f}")
-        print("-" * 80)
-        print(doc[:500])
+        print(
+            "=" * 80
+        )
+
+        print(
+            f"Rank       : {rank}"
+        )
+
+        print(
+            f"ID         : {idx}"
+        )
+
+        print(
+            f"Distance   : {distance:.6f}"
+        )
+
+        print(
+            f"Source     : {metadata.get('source')}"
+        )
+
+        print(
+            f"Chunk ID    : {metadata.get('chunk_id')}"
+        )
+
+        print(
+            f"Chunk Index : {metadata.get('chunk_index')}"
+        )
+
+        print(
+            "-" * 80
+        )
+
+        print(
+            doc[:500]
+        )
+
         print()
