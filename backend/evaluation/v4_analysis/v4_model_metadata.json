@@ -1,0 +1,25 @@
+{
+  "model": "Extra Trees",
+  "features": [
+    "bm25_score_gap",
+    "dense_similarity_gap",
+    "overlap_ratio",
+    "rank_agreement"
+  ],
+  "target": "oracle_bm25_weight",
+  "dataset_size": 122,
+  "train_size": 85,
+  "validation_size": 18,
+  "test_size": 19,
+  "validation_metrics": {
+    "mae": 0.0821601142427531,
+    "rmse": 0.15868501098801616,
+    "r2": -0.12649253693813511
+  },
+  "test_metrics": {
+    "mae": 0.24591593567251463,
+    "rmse": 0.3690263104871729,
+    "r2": -0.45835451905282976
+  },
+  "random_state": 42
+}
