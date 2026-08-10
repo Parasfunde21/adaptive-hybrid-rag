@@ -20,8 +20,10 @@ chroma_db/
 backend/models/*.pkl
 backend/models/*.joblib
 
+
 # Training Outputs
-backend/training/training_dataset.csv
+backend/training/*.csv
+backend/evaluation/*.csv
 
 # Environment
 .env
@@ -33,3 +35,6 @@ backend/training/training_dataset.csv
 # OS
 .DS_Store
 Thumbs.db
+
+# Runtime Logs
+backend/logs/

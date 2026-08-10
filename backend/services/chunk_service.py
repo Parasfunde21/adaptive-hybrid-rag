@@ -1,26 +1,57 @@
-from pdf_service import extract_text, clean_text
+from services.pdf_service import (
+    extract_text,
+    clean_text
+)
 
 
-def chunk_text(text, chunk_size=500):
+def chunk_text(
+    text,
+    chunk_size=500
+):
+
     chunks = []
 
-    for i in range(0, len(text), chunk_size):
-        chunks.append(text[i:i + chunk_size])
+    for i in range(
+        0,
+        len(text),
+        chunk_size
+    ):
+
+        chunks.append(
+            text[
+                i:i + chunk_size
+            ]
+        )
 
     return chunks
 
 
 if __name__ == "__main__":
+
     pdf = "../../data/raw/sample.pdf"
 
-    text = extract_text(pdf)
+    text = extract_text(
+        pdf
+    )
 
-    cleaned = clean_text(text)
+    cleaned = clean_text(
+        text
+    )
 
-    chunks = chunk_text(cleaned)
+    chunks = chunk_text(
+        cleaned
+    )
 
-    print(f"Total Chunks: {len(chunks)}")
+    print(
+        f"Total Chunks: {len(chunks)}"
+    )
 
-    print("\nFirst Chunk:\n")
+    if chunks:
 
-    print(chunks[0])
+        print(
+            "\nFirst Chunk:\n"
+        )
+
+        print(
+            chunks[0]
+        )

@@ -6,13 +6,21 @@ class AdaptiveScoreFusion:
     """
     Adaptive Score Fusion (ASF)
 
-    Combines normalized BM25 scores and normalized
-    Dense similarities using ML-predicted weights.
+    Combines normalized BM25 scores and dense similarities
+    using ML-predicted weights while preserving document
+    metadata for downstream citation support.
     """
+
+    # ========================================================
+    # Normalization
+    # ========================================================
 
     def normalize(self, scores):
 
-        scores = np.array(scores, dtype=float)
+        scores = np.array(
+            scores,
+            dtype=float
+        )
 
         if len(scores) == 0:
             return scores
@@ -23,7 +31,15 @@ class AdaptiveScoreFusion:
         if maximum == minimum:
             return np.ones_like(scores)
 
-        return (scores - minimum) / (maximum - minimum)
+        return (
+            scores - minimum
+        ) / (
+            maximum - minimum
+        )
+
+    # ========================================================
+    # Dense Distance -> Similarity
+    # ========================================================
 
     def dense_similarity(self, distances):
 
@@ -32,27 +48,28 @@ class AdaptiveScoreFusion:
             for d in distances
         ])
 
+    # ========================================================
+    # Fusion
+    # ========================================================
+
     def fuse(
-
         self,
-
         dense_docs,
         dense_distances,
-
+        dense_ids,
+        dense_metadatas,
         bm25_docs,
         bm25_scores,
-
-        dense_weight,
-        bm25_weight
-
+        bm25_ids=None,
+        bm25_metadatas=None,
+        dense_weight=0.5,
+        bm25_weight=0.5
     ):
 
         dense_scores = self.normalize(
-
             self.dense_similarity(
                 dense_distances
             )
-
         )
 
         bm25_scores = self.normalize(
@@ -61,121 +78,303 @@ class AdaptiveScoreFusion:
 
         results = {}
 
-        # -----------------------------------
-        # Dense Retrieval Contribution
-        # -----------------------------------
+        # ====================================================
+        # Dense Retrieval
+        # ====================================================
 
-        for rank, (doc, similarity) in enumerate(
+        for rank, (
+            doc,
+            similarity,
+            doc_id,
+            metadata
+        ) in enumerate(
 
-            zip(dense_docs, dense_scores),
+            zip(
+                dense_docs,
+                dense_scores,
+                dense_ids,
+                dense_metadatas
+            ),
 
             start=1
-
         ):
 
-            if doc not in results:
+            # Use stable chunk ID instead of document text
+            key = (
+                metadata.get(
+                    "chunk_id"
+                )
+                if metadata
+                else doc_id
+            )
 
-                results[doc] = {
+            if key not in results:
 
-                    "document": doc,
+                results[key] = {
 
-                    "fusion_score": 0.0,
+                    "document":
+                        doc,
 
-                    "retrieved_by": [],
+                    "id":
+                        doc_id,
 
-                    "dense_similarity": None,
+                    "metadata":
+                        metadata or {},
 
-                    "bm25_score": None,
+                    "fusion_score":
+                        0.0,
 
-                    "dense_rank": None,
+                    "retrieved_by":
+                        [],
 
-                    "bm25_rank": None
+                    "dense_similarity":
+                        None,
 
+                    "bm25_score":
+                        None,
+
+                    "dense_rank":
+                        None,
+
+                    "bm25_rank":
+                        None
                 }
 
-            results[doc]["fusion_score"] += (
+            results[key][
+                "fusion_score"
+            ] += (
 
                 dense_weight *
 
-                float(similarity)
-
+                float(
+                    similarity
+                )
             )
 
-            results[doc]["dense_similarity"] = float(similarity)
-
-            results[doc]["dense_rank"] = rank
-
-            results[doc]["retrieved_by"].append(
-                "Dense"
+            results[key][
+                "dense_similarity"
+            ] = float(
+                similarity
             )
 
-        # -----------------------------------
-        # BM25 Contribution
-        # -----------------------------------
+            results[key][
+                "dense_rank"
+            ] = rank
 
-        for rank, (doc, score) in enumerate(
+            if "Dense" not in results[key][
+                "retrieved_by"
+            ]:
 
-            zip(bm25_docs, bm25_scores),
+                results[key][
+                    "retrieved_by"
+                ].append(
+                    "Dense"
+                )
+
+        # ====================================================
+        # BM25 Retrieval
+        # ====================================================
+
+        for rank, (
+            doc,
+            score
+        ) in enumerate(
+
+            zip(
+                bm25_docs,
+                bm25_scores
+            ),
 
             start=1
-
         ):
 
-            if doc not in results:
+            # Try to match BM25 result to an existing
+            # dense result using exact document text.
+            matching_key = None
 
-                results[doc] = {
+            for key, item in results.items():
 
-                    "document": doc,
+                if item["document"] == doc:
 
-                    "fusion_score": 0.0,
+                    matching_key = key
+                    break
 
-                    "retrieved_by": [],
+            # If BM25 found a document that Dense did not,
+            # create a new result.
+            if matching_key is None:
 
-                    "dense_similarity": None,
+                if bm25_metadatas and (
+                    rank - 1
+                ) < len(bm25_metadatas):
 
-                    "bm25_score": None,
+                    metadata = (
+                        bm25_metadatas[
+                            rank - 1
+                        ]
+                        or {}
+                    )
 
-                    "dense_rank": None,
+                else:
 
-                    "bm25_rank": None
+                    metadata = {}
 
+                if bm25_ids and (
+                    rank - 1
+                ) < len(bm25_ids):
+
+                    doc_id = (
+                        bm25_ids[
+                            rank - 1
+                        ]
+                    )
+
+                else:
+
+                    doc_id = (
+                        metadata.get(
+                            "chunk_id",
+                            f"bm25_{rank}"
+                        )
+                    )
+
+                matching_key = (
+                    metadata.get(
+                        "chunk_id",
+                        doc_id
+                    )
+                )
+
+                results[matching_key] = {
+
+                    "document":
+                        doc,
+
+                    "id":
+                        doc_id,
+
+                    "metadata":
+                        metadata,
+
+                    "fusion_score":
+                        0.0,
+
+                    "retrieved_by":
+                        [],
+
+                    "dense_similarity":
+                        None,
+
+                    "bm25_score":
+                        None,
+
+                    "dense_rank":
+                        None,
+
+                    "bm25_rank":
+                        None
                 }
 
-            results[doc]["fusion_score"] += (
+            results[
+                matching_key
+            ][
+                "fusion_score"
+            ] += (
 
                 bm25_weight *
 
-                float(score)
-
+                float(
+                    score
+                )
             )
 
-            results[doc]["bm25_score"] = float(score)
-
-            results[doc]["bm25_rank"] = rank
-
-            results[doc]["retrieved_by"].append(
-                "BM25"
+            results[
+                matching_key
+            ][
+                "bm25_score"
+            ] = float(
+                score
             )
+
+            results[
+                matching_key
+            ][
+                "bm25_rank"
+            ] = rank
+
+            if "BM25" not in results[
+                matching_key
+            ][
+                "retrieved_by"
+            ]:
+
+                results[
+                    matching_key
+                ][
+                    "retrieved_by"
+                ].append(
+                    "BM25"
+                )
+
+        # ====================================================
+        # Sort
+        # ====================================================
 
         ranked = sorted(
 
             results.values(),
 
-            key=lambda x: x["fusion_score"],
+            key=lambda x:
+                x["fusion_score"],
 
             reverse=True
-
         )
+
+        # ====================================================
+        # Round scores
+        # ====================================================
 
         for item in ranked:
 
-            item["fusion_score"] = round(
+            item[
+                "fusion_score"
+            ] = round(
 
-                item["fusion_score"],
+                item[
+                    "fusion_score"
+                ],
 
                 6
-
             )
+
+            if item[
+                "dense_similarity"
+            ] is not None:
+
+                item[
+                    "dense_similarity"
+                ] = round(
+
+                    item[
+                        "dense_similarity"
+                    ],
+
+                    6
+                )
+
+            if item[
+                "bm25_score"
+            ] is not None:
+
+                item[
+                    "bm25_score"
+                ] = round(
+
+                    item[
+                        "bm25_score"
+                    ],
+
+                    6
+                )
 
         return ranked
 
