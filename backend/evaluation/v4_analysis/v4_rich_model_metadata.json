@@ -1,0 +1,38 @@
+{
+  "model": "Extra Trees",
+  "features": [
+    "bm25_top_score",
+    "bm25_mean_score",
+    "bm25_score_std",
+    "bm25_score_gap",
+    "bm25_top_mean_ratio",
+    "dense_top_similarity",
+    "dense_mean_similarity",
+    "dense_similarity_std",
+    "dense_similarity_gap",
+    "dense_top_mean_ratio",
+    "overlap_ratio",
+    "rank_agreement",
+    "query_token_count",
+    "query_unique_token_count",
+    "query_avg_token_length",
+    "bm25_top_lexical_coverage",
+    "dense_top_lexical_coverage"
+  ],
+  "target": "oracle_bm25_weight",
+  "rows": 122,
+  "train_size": 85,
+  "validation_size": 18,
+  "test_size": 19,
+  "validation_metrics": {
+    "mae": 0.17205281746031742,
+    "rmse": 0.2684209471677338,
+    "r2": 0.050665442024841245
+  },
+  "test_metrics": {
+    "mae": 0.0786642481203007,
+    "rmse": 0.16838793250810563,
+    "r2": 0.41223238650692406
+  },
+  "random_state": 42
+}
