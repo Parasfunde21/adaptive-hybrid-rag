@@ -5,31 +5,41 @@ from services.retrieval_service import (
     dense_search
 )
 
+
 from services.bm25_service import (
     bm25_search
 )
+
 
 from services.adaptive_predictor_v3 import (
     adaptive_predictor_v3
 )
 
+
 from services.retrieval_feature_service import (
     retrieval_feature_service
 )
 
+
 from services.fusion_service import (
     fusion_service
 )
+
 
 from services.logging_service import (
     logging_service
 )
 
 
+from config.settings import (
+    TOP_K,
+    CANDIDATE_K
+)
+
+
 # ============================================================
 # Adaptive Hybrid Retriever
 # ============================================================
-
 
 class AdaptiveHybridRetriever:
 
@@ -44,12 +54,24 @@ class AdaptiveHybridRetriever:
     def search(
         self,
         query,
-        top_k=10
+        top_k=TOP_K
     ):
 
         total_start = (
             time.perf_counter()
         )
+
+
+        # ====================================================
+        # Retrieval Configuration
+        # ====================================================
+
+        # Final number of documents returned.
+        final_k = top_k
+
+        # Number of candidates retrieved independently
+        # by BM25 and Dense before fusion.
+        candidate_k = CANDIDATE_K
 
 
         # ====================================================
@@ -70,7 +92,7 @@ class AdaptiveHybridRetriever:
 
             query=query,
 
-            top_k=top_k
+            top_k=candidate_k
         )
 
 
@@ -83,7 +105,7 @@ class AdaptiveHybridRetriever:
 
             query=query,
 
-            top_k=top_k
+            top_k=candidate_k
         )
 
 
@@ -118,7 +140,7 @@ class AdaptiveHybridRetriever:
 
 
         # ====================================================
-        # 3. V3 Adaptive Weight Prediction
+        # 3. Adaptive Weight Prediction
         # ====================================================
 
         prediction = (
@@ -138,9 +160,11 @@ class AdaptiveHybridRetriever:
             "bm25_weight"
         ]
 
+
         dense_weight = prediction[
             "dense_weight"
         ]
+
 
         model_name = prediction[
             "model"
@@ -205,7 +229,7 @@ class AdaptiveHybridRetriever:
         final_results = (
 
             fused_results[
-                :top_k
+                :final_k
             ]
         )
 
@@ -219,14 +243,18 @@ class AdaptiveHybridRetriever:
             final_results,
 
             start=1
+
         ):
 
             metadata = (
+
                 item.get(
                     "metadata",
                     {}
                 )
+
                 or {}
+
             )
 
 
@@ -289,6 +317,7 @@ class AdaptiveHybridRetriever:
                     metadata.get(
                         "chunk_index"
                     )
+
             }
 
 
@@ -363,6 +392,50 @@ class AdaptiveHybridRetriever:
             "model":
                 model_name,
 
+            # Explicitly expose the retrieval depth
+            # for experiment verification.
+
+            "retrieval_config": {
+
+                "candidate_k":
+                    candidate_k,
+
+                "final_k":
+                    final_k,
+
+                "bm25_candidates":
+                    len(bm25_docs),
+
+                "dense_candidates":
+                    len(dense_docs),
+
+                "fused_candidates":
+                    len(fused_results)
+
+            },
+
+            "latency": {
+
+                "retrieval":
+                    round(
+                        retrieval_latency,
+                        6
+                    ),
+
+                "fusion":
+                    round(
+                        fusion_latency,
+                        6
+                    ),
+
+                "total":
+                    round(
+                        total_latency,
+                        6
+                    )
+
+            },
+
             "results":
                 final_results
 
@@ -373,7 +446,6 @@ class AdaptiveHybridRetriever:
 # Global Retriever
 # ============================================================
 
-
 retriever = (
     AdaptiveHybridRetriever()
 )
@@ -383,10 +455,9 @@ retriever = (
 # Public Function
 # ============================================================
 
-
 def hybrid_search(
     query,
-    top_k=10
+    top_k=TOP_K
 ):
 
     return retriever.search(
@@ -402,7 +473,6 @@ def hybrid_search(
 # Manual Testing
 # ============================================================
 
-
 if __name__ == "__main__":
 
     print(
@@ -410,11 +480,19 @@ if __name__ == "__main__":
     )
 
     print(
-        "ADAPTIVE HYBRID RAG — V3"
+        "ADAPTIVE HYBRID RAG"
     )
 
     print(
         "=" * 80
+    )
+
+    print(
+        f"Candidate K : {CANDIDATE_K}"
+    )
+
+    print(
+        f"Final K     : {TOP_K}"
     )
 
     print(
@@ -452,8 +530,58 @@ if __name__ == "__main__":
 
                 query=query,
 
-                top_k=10
+                top_k=TOP_K
 
+            )
+
+
+            print()
+
+            print(
+                "=" * 80
+            )
+
+            print(
+                "RETRIEVAL CONFIGURATION"
+            )
+
+            print(
+                "=" * 80
+            )
+
+
+            config = response[
+                "retrieval_config"
+            ]
+
+
+            print(
+                f"Candidate K       : "
+                f"{config['candidate_k']}"
+            )
+
+
+            print(
+                f"Final K           : "
+                f"{config['final_k']}"
+            )
+
+
+            print(
+                f"BM25 candidates   : "
+                f"{config['bm25_candidates']}"
+            )
+
+
+            print(
+                f"Dense candidates  : "
+                f"{config['dense_candidates']}"
+            )
+
+
+            print(
+                f"Fused candidates  : "
+                f"{config['fused_candidates']}"
             )
 
 
@@ -477,10 +605,12 @@ if __name__ == "__main__":
                 f"{response['weights']['bm25']}"
             )
 
+
             print(
                 f"Dense Weight: "
                 f"{response['weights']['dense']}"
             )
+
 
             print(
                 f"Model       : "
@@ -489,6 +619,48 @@ if __name__ == "__main__":
 
 
             print()
+
+            print(
+                "=" * 80
+            )
+
+            print(
+                "LATENCY"
+            )
+
+            print(
+                "=" * 80
+            )
+
+
+            latency = response[
+                "latency"
+            ]
+
+
+            print(
+                f"Retrieval : "
+                f"{latency['retrieval']:.6f}s"
+            )
+
+
+            print(
+                f"Fusion    : "
+                f"{latency['fusion']:.6f}s"
+            )
+
+
+            print(
+                f"Total     : "
+                f"{latency['total']:.6f}s"
+            )
+
+
+            print()
+
+            print(
+                "=" * 80
+            )
 
             print(
                 "RETRIEVED DOCUMENTS"
@@ -510,59 +682,71 @@ if __name__ == "__main__":
                     f"{item.get('rank')}"
                 )
 
+
                 print(
                     f"Fusion Score  : "
                     f"{item.get('fusion_score', 0)}"
                 )
+
 
                 print(
                     f"Retrieved By  : "
                     f"{', '.join(item.get('retrieved_by', []))}"
                 )
 
+
                 print(
                     f"Dense Sim     : "
                     f"{item.get('dense_similarity', 0)}"
                 )
+
 
                 print(
                     f"BM25 Score    : "
                     f"{item.get('bm25_score', 0)}"
                 )
 
+
                 print(
                     f"Dense Rank    : "
                     f"{item.get('dense_rank', '-')}"
                 )
+
 
                 print(
                     f"BM25 Rank     : "
                     f"{item.get('bm25_rank', '-')}"
                 )
 
+
                 print(
                     f"Source        : "
                     f"{item.get('source')}"
                 )
+
 
                 print(
                     f"Document ID   : "
                     f"{item.get('document_id')}"
                 )
 
+
                 print(
                     f"Chunk ID      : "
                     f"{item.get('chunk_id')}"
                 )
+
 
                 print(
                     f"Chunk Index   : "
                     f"{item.get('chunk_index')}"
                 )
 
+
                 print(
                     "-" * 80
                 )
+
 
                 print(
                     item.get(
