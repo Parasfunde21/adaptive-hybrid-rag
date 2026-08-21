@@ -1,11 +1,15 @@
 import time
 
-from fastapi import APIRouter
-from fastapi import HTTPException
+from fastapi import APIRouter, HTTPException
+
+from api.auth import router as auth_router
+from api.user_routes import router as user_document_router
+from api.user_chat import router as user_chat_router
+from api.conversations import router as conversation_router
 
 from api.schemas import (
     QueryRequest,
-    QueryResponse
+    QueryResponse,
 )
 
 from services.analytics_service import analytics_service
@@ -13,71 +17,90 @@ from services.rag_pipeline import rag_pipeline
 
 
 # ============================================================
-# Router
+# Main Router
 # ============================================================
 
 router = APIRouter()
 
 
 # ============================================================
-# ASK
+# Authentication
+# ============================================================
+
+router.include_router(
+    auth_router
+)
+
+
+# ============================================================
+# User Documents
+# ============================================================
+
+router.include_router(
+    user_document_router
+)
+
+
+# ============================================================
+# User Chat
+# ============================================================
+
+router.include_router(
+    user_chat_router
+)
+
+
+# ============================================================
+# Conversations
+# ============================================================
+
+router.include_router(
+    conversation_router
+)
+
+
+# ============================================================
+# General ASK
 # ============================================================
 
 @router.post(
     "/ask",
-    response_model=QueryResponse
+    response_model=QueryResponse,
 )
 def ask_question(
-    request: QueryRequest
+    request: QueryRequest,
 ):
 
     start = time.perf_counter()
 
     try:
 
-        # ====================================================
-        # Run RAG Pipeline
-        # ====================================================
-
         result = rag_pipeline.answer(
             query=request.query
         )
 
-
-        # ====================================================
-        # Processing Time
-        # ====================================================
-
         elapsed = round(
-            time.perf_counter() - start,
-            3
+            time.perf_counter()
+            - start,
+            3,
         )
 
-
-        # ====================================================
-        # Build Response
-        # ====================================================
-
-        response = {
+        return {
             "success": True,
             "processing_time": elapsed,
-            **result
+            **result,
         }
 
-
-        return response
-
-
-    except Exception as e:
+    except Exception as error:
 
         raise HTTPException(
             status_code=500,
-            detail=str(e)
+            detail=str(error),
         )
 
 
 # ============================================================
-# ANALYTICS
+# Analytics
 # ============================================================
 
 @router.get(

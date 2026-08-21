@@ -1,26 +1,12 @@
 import chromadb
 
-from sentence_transformers import SentenceTransformer
-
 from config.settings import (
     CHROMA_DB_DIR,
     COLLECTION_NAME,
-    EMBEDDING_MODEL,
     TOP_K,
 )
 
-
-# ============================================================
-# Embedding Model
-# ============================================================
-
-print(
-    f"Loading embedding model: {EMBEDDING_MODEL}"
-)
-
-model = SentenceTransformer(
-    EMBEDDING_MODEL
-)
+from services.model_loader import embedding_model
 
 
 # ============================================================
@@ -34,7 +20,6 @@ print(
 client = chromadb.PersistentClient(
     path=str(CHROMA_DB_DIR)
 )
-
 
 collection = client.get_collection(
     COLLECTION_NAME
@@ -103,7 +88,7 @@ def dense_search(
     # Encode query
     # --------------------------------------------------------
 
-    embedding = model.encode(
+    embedding = embedding_model.encode(
         query,
         normalize_embeddings=False
     ).tolist()
