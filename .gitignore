@@ -86,3 +86,9 @@ backend/data/*.db-*
 
 # Generated evaluation datasets
 backend/evaluation/dataset_v2/processed/
+
+# Local model/cache artifacts
+backend/requirements-current.txt
+*.pkl
+*.joblib
+
