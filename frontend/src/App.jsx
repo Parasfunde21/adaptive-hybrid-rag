@@ -624,7 +624,11 @@ function ResearchDashboard({ rag }) {
   const totalRetrieval =
     Number(retrievalMetrics.total_retrieval_ms || 0);
 
-  const generation = getGenerationMs(rag);
+  const generation = Number(
+  rag?.latency?.generation_ms ??
+  rag?.retrieval_metrics?.generation_ms ??
+  0
+);
 
   const total =
     Number(
