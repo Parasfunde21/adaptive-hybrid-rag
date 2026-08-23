@@ -1,0 +1,11 @@
+Adaptive Hybrid RAG is a retrieval augmented generation system.
+
+The system combines BM25 lexical retrieval with dense semantic retrieval.
+
+BM25 is useful when exact terminology and keyword matching are important.
+
+Dense retrieval is useful when semantic similarity is more important than exact word matching.
+
+The adaptive retrieval component predicts different BM25 and dense weights depending on the query characteristics.
+
+This allows the system to adapt retrieval behavior for different types of queries.

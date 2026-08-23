@@ -1,0 +1,5 @@
+The project uses FastAPI as the backend API framework.
+
+The frontend will allow users to upload documents and ask questions about their own documents.
+
+User documents are stored in an isolated collection so that one user's documents are not mixed with another user's documents.

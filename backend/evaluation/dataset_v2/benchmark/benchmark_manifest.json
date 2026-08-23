@@ -1,0 +1,45 @@
+{
+  "benchmark_version": "multidomain_v2_1000",
+  "description": "Balanced multi-domain retrieval benchmark constructed from public BEIR datasets.",
+  "random_seed": 42,
+  "total_queries": 1000,
+  "domains": 4,
+  "queries_per_domain": 250,
+  "global_query_id_scheme": "dataset-source_query_id",
+  "datasets": {
+    "scifact": {
+      "domain": "scientific",
+      "queries": 250,
+      "relevant_query_document_pairs": 279
+    },
+    "fiqa": {
+      "domain": "finance",
+      "queries": 250,
+      "relevant_query_document_pairs": 614
+    },
+    "nfcorpus": {
+      "domain": "medical",
+      "queries": 250,
+      "relevant_query_document_pairs": 10346
+    },
+    "arguana": {
+      "domain": "argumentation",
+      "queries": 250,
+      "relevant_query_document_pairs": 250
+    }
+  },
+  "evaluation_scope": [
+    "BM25",
+    "Dense",
+    "RRF",
+    "Fixed Hybrid",
+    "Adaptive Hybrid"
+  ],
+  "metrics": [
+    "Precision@10",
+    "Recall@10",
+    "MRR",
+    "nDCG@10",
+    "Latency"
+  ]
+}

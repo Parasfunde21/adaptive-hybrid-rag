@@ -1,35 +1,48 @@
 import chromadb
 
-from sentence_transformers import SentenceTransformer
-
 from config.settings import (
     CHROMA_DB_DIR,
     COLLECTION_NAME,
-    EMBEDDING_MODEL
+    TOP_K,
 )
 
-
-# ============================================================
-# Embedding Model
-# ============================================================
-
-model = SentenceTransformer(
-    EMBEDDING_MODEL
-)
+from services.model_loader import embedding_model
 
 
 # ============================================================
 # ChromaDB
 # ============================================================
 
+print(
+    f"Opening ChromaDB collection: {COLLECTION_NAME}"
+)
+
 client = chromadb.PersistentClient(
     path=str(CHROMA_DB_DIR)
 )
 
-
 collection = client.get_collection(
     COLLECTION_NAME
 )
+
+
+# ============================================================
+# Validation
+# ============================================================
+
+collection_count = collection.count()
+
+print(
+    f"Dense retrieval collection count: "
+    f"{collection_count}"
+)
+
+if collection_count == 0:
+
+    raise ValueError(
+        f"ChromaDB collection '{COLLECTION_NAME}' "
+        "is empty."
+    )
 
 
 # ============================================================
@@ -38,24 +51,52 @@ collection = client.get_collection(
 
 def dense_search(
     query: str,
-    top_k: int = 10
+    top_k: int = TOP_K
 ):
 
     """
-    Dense semantic retrieval.
+    Perform dense semantic retrieval.
 
-    Returns:
+    Parameters
+    ----------
+    query : str
+        User query.
 
-        documents
-        distances
-        ids
+    top_k : int
+        Number of results to retrieve.
+
+    Returns
+    -------
+    tuple
+        documents,
+        distances,
+        ids,
         metadatas
     """
 
-    embedding = model.encode(
-        query
+    if not query or not query.strip():
+
+        return (
+            [],
+            [],
+            [],
+            []
+        )
+
+
+    # --------------------------------------------------------
+    # Encode query
+    # --------------------------------------------------------
+
+    embedding = embedding_model.encode(
+        query,
+        normalize_embeddings=False
     ).tolist()
 
+
+    # --------------------------------------------------------
+    # Chroma similarity search
+    # --------------------------------------------------------
 
     results = collection.query(
 
@@ -73,13 +114,29 @@ def dense_search(
     )
 
 
-    documents = results["documents"][0]
+    # --------------------------------------------------------
+    # Extract results
+    # --------------------------------------------------------
 
-    distances = results["distances"][0]
+    documents = (
+        results.get("documents", [[]])[0]
+        or []
+    )
 
-    ids = results["ids"][0]
+    distances = (
+        results.get("distances", [[]])[0]
+        or []
+    )
 
-    metadatas = results["metadatas"][0]
+    ids = (
+        results.get("ids", [[]])[0]
+        or []
+    )
+
+    metadatas = (
+        results.get("metadatas", [[]])[0]
+        or []
+    )
 
 
     return (
@@ -91,7 +148,7 @@ def dense_search(
 
 
 # ============================================================
-# Test
+# Manual Test
 # ============================================================
 
 if __name__ == "__main__":
@@ -102,13 +159,15 @@ if __name__ == "__main__":
 
 
     docs, distances, ids, metadatas = dense_search(
-        query
+        query,
+        TOP_K
     )
 
 
-    print(
-        "\nTop Dense Results\n"
-    )
+    print()
+    print("=" * 80)
+    print("TOP DENSE RESULTS")
+    print("=" * 80)
 
 
     for rank, (
@@ -116,7 +175,6 @@ if __name__ == "__main__":
         distance,
         idx,
         metadata
-
     ) in enumerate(
 
         zip(
@@ -129,40 +187,43 @@ if __name__ == "__main__":
         start=1
     ):
 
+        print()
+        print("-" * 80)
+
         print(
-            "=" * 80
+            f"Rank        : {rank}"
         )
 
         print(
-            f"Rank       : {rank}"
+            f"ID          : {idx}"
         )
 
         print(
-            f"ID         : {idx}"
+            f"Distance    : {distance:.6f}"
         )
 
         print(
-            f"Distance   : {distance:.6f}"
+            f"Domain      : "
+            f"{metadata.get('domain')}"
         )
 
         print(
-            f"Source     : {metadata.get('source')}"
+            f"Dataset     : "
+            f"{metadata.get('dataset')}"
         )
 
         print(
-            f"Chunk ID    : {metadata.get('chunk_id')}"
+            f"Document ID : "
+            f"{metadata.get('document_id')}"
         )
 
         print(
-            f"Chunk Index : {metadata.get('chunk_index')}"
+            f"Source      : "
+            f"{metadata.get('source')}"
         )
 
-        print(
-            "-" * 80
-        )
+        print()
 
         print(
             doc[:500]
         )
-
-        print()

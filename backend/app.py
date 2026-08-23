@@ -1,70 +1,117 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from api.routes import router
 from api.exceptions import global_exception_handler
 
 
+# ============================================================
+# Application
+# ============================================================
+
 app = FastAPI(
-
     title="Adaptive Hybrid RAG API",
-
     version="1.0.0",
-
-    description="Query-Aware Adaptive Hybrid Retrieval-Augmented Generation"
-
+    description=(
+        "Query-Aware Adaptive Hybrid "
+        "Retrieval-Augmented Generation"
+    ),
 )
 
 
-app.include_router(router)
+# ============================================================
+# CORS
+# ============================================================
 
+app.add_middleware(
+    CORSMiddleware,
+
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+
+    allow_credentials=True,
+
+    allow_methods=[
+        "*"
+    ],
+
+    allow_headers=[
+        "*"
+    ],
+)
+
+
+# ============================================================
+# API Routes
+# ============================================================
+
+app.include_router(
+    router
+)
+
+
+# ============================================================
+# Global Exception Handler
+# ============================================================
 
 app.add_exception_handler(
-
     Exception,
-
-    global_exception_handler
-
+    global_exception_handler,
 )
 
 
-@app.get("/")
+# ============================================================
+# Home
+# ============================================================
 
+@app.get("/")
 def home():
 
     return {
-
-        "message": "Adaptive Hybrid RAG API is running."
-
+        "message":
+            "Adaptive Hybrid RAG API is running."
     }
 
 
-@app.get("/health")
+# ============================================================
+# Health
+# ============================================================
 
+@app.get("/health")
 def health():
 
     return {
-
-        "status": "healthy"
-
+        "status":
+            "healthy"
     }
 
 
-@app.get("/info")
+# ============================================================
+# Project Information
+# ============================================================
 
+@app.get("/info")
 def info():
 
     return {
 
-        "project": "Adaptive Hybrid RAG",
+        "project":
+            "Adaptive Hybrid RAG",
 
-        "llm": "qwen2.5:7b",
+        "llm":
+            "qwen2.5:7b",
 
-        "embedding_model": "all-MiniLM-L6-v2",
+        "embedding_model":
+            "all-MiniLM-L6-v2",
 
-        "reranker": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+        "reranker":
+            "cross-encoder/ms-marco-MiniLM-L-6-v2",
 
-        "fusion": "Adaptive Score Fusion",
+        "fusion":
+            "Adaptive Score Fusion",
 
-        "version": "1.0.0"
-
+        "version":
+            "1.0.0",
     }
