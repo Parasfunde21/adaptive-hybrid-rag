@@ -22,6 +22,8 @@ import {
   Sparkles,
   Trash2,
   Upload,
+  Eye,
+  EyeOff, 
   User,
   X,
   Zap,
@@ -330,10 +332,12 @@ function renderMarkdown(text = "") {
 
 function AuthScreen({ onAuthenticated }) {
   const [mode, setMode] = useState("login");
+  const [verificationEmail, setVerificationEmail] = useState("");
   const [usernameOrEmail, setUsernameOrEmail] = useState("");
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -364,6 +368,12 @@ function AuthScreen({ onAuthenticated }) {
           }),
         });
       }
+      if (mode === "register") {
+        setVerificationEmail(data.email || email);
+        setMode("verification-sent");
+        setPassword("");
+        return;
+     }
 
       localStorage.setItem("ahr_token", data.token);
       localStorage.setItem(
@@ -378,6 +388,65 @@ function AuthScreen({ onAuthenticated }) {
       setLoading(false);
     }
   }
+  if (mode === "verification-sent") {
+  return (
+    <div className="auth-page">
+      <div className="auth-background-orb orb-one" />
+      <div className="auth-background-orb orb-two" />
+
+      <div className="auth-card">
+        <div className="auth-brand">
+          <div className="brand-icon large">
+            <Sparkles size={25} />
+          </div>
+
+          <div>
+            <h1>Adaptive Hybrid RAG</h1>
+            <p>Document Intelligence</p>
+          </div>
+        </div>
+
+        <div className="auth-heading">
+          <h2>Check your email</h2>
+
+          <p>
+            We sent a verification link to
+          </p>
+
+          <strong className="verification-email">
+            {verificationEmail}
+          </strong>
+        </div>
+
+        <div className="auth-form">
+          <p className="verification-message">
+            Please check your inbox and click the
+            verification link to activate your account.
+            The link is valid for 24 hours.
+          </p>
+
+          <button
+            type="button"
+            className="primary-button auth-submit"
+            onClick={() => {
+              setMode("login");
+              setError("");
+            }}
+          >
+            <span>Go to sign in</span>
+            <ChevronRight size={17} aria-hidden="true" />
+          </button>
+        </div>
+
+        {error && (
+          <div className="auth-error">
+            {error}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
   return (
     <div className="auth-page">
@@ -456,7 +525,7 @@ function AuthScreen({ onAuthenticated }) {
                   onChange={(e) =>
                     setUsernameOrEmail(e.target.value)
                   }
-                  placeholder="paras3"
+                  placeholder="username or email"
                   required
                 />
               </div>
@@ -465,19 +534,39 @@ function AuthScreen({ onAuthenticated }) {
 
           <label>
             Password
-            <div className="input-wrap">
-              <Settings2 size={17} />
-              <input
-                type="password"
-                value={password}
-                onChange={(e) =>
-                  setPassword(e.target.value)
-                }
-                placeholder="Minimum 8 characters"
-                minLength={8}
-                required
-              />
-            </div>
+            <div className="input-wrap password-input-wrap">
+  <Settings2 size={17} />
+
+  <input
+    type={showPassword ? "text" : "password"}
+    value={password}
+    onChange={(e) =>
+      setPassword(e.target.value)
+    }
+    placeholder="Minimum 8 characters"
+    minLength={8}
+    required
+  />
+
+  <button
+    type="button"
+    className="password-toggle"
+    onClick={() =>
+      setShowPassword((current) => !current)
+    }
+    aria-label={
+      showPassword
+        ? "Hide password"
+        : "Show password"
+    }
+  >
+    {showPassword ? (
+      <EyeOff size={17} />
+    ) : (
+      <Eye size={17} />
+    )}
+  </button>
+</div>
           </label>
 
           {error && (

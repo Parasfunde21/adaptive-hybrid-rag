@@ -1,0 +1,16 @@
+metric,value
+total_queries,1000
+adaptive_weight_changed_queries,1000
+adaptive_weight_changed_percent,100.0
+mrr_improved_queries,138
+mrr_equal_queries,768
+mrr_decreased_queries,94
+ndcg_improved_queries,209
+ndcg_equal_queries,675
+ndcg_decreased_queries,116
+precision_improved_queries,67
+precision_equal_queries,904
+precision_decreased_queries,29
+recall_improved_queries,67
+recall_equal_queries,904
+recall_decreased_queries,29

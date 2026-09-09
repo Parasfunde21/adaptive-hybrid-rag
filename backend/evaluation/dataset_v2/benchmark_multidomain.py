@@ -1520,6 +1520,11 @@ def main():
     )
 
     print(
+        f"Candidate-K       : "
+        f"{CANDIDATE_K}"
+    )
+
+    print(
         "Methods            : "
         "BM25, Dense, RRF, "
         "Fixed Hybrid, Adaptive Hybrid"
@@ -1550,7 +1555,8 @@ def main():
 
         rows = evaluate_query(
             query_record,
-            args.top_k
+            args.top_k,
+            CANDIDATE_K
         )
 
         all_rows.extend(
