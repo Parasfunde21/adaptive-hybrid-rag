@@ -1,262 +1,378 @@
-Adaptive Hybrid RAG
+# Adaptive Hybrid RAG
+
+Adaptive Hybrid RAG is a research-oriented Retrieval-Augmented Generation system that combines BM25 lexical retrieval, dense semantic retrieval, and query-dependent adaptive fusion. The project is designed to support both academic benchmarking and a working application for uploading documents, asking questions, and inspecting retrieval behavior in real time.
+
+This repository contains the full project structure for a final-year submission: backend services, frontend UI, evaluation scripts, trained model artifacts, and supporting research files.
+
+## Project overview
+
+The system addresses a common hybrid-RAG limitation: a single fixed weighting between BM25 and dense retrieval does not work well for all query types. Keyword-heavy queries often favor lexical retrieval, while semantic or paraphrased queries favor dense retrieval.
+
+The implementation uses a learned predictor to estimate a query-specific BM25 weight and then computes the dense weight as:
+
+- predicted_dense_weight = 1 - predicted_bm25_weight
+
+The final fused score combines independently normalized BM25 and dense retrieval scores. This is implemented in the retrieval and fusion services used by both the general RAG endpoint and the user-document RAG workflow.
+
+## Main features
+
+- BM25 lexical retrieval using rank-bm25
+- Dense semantic retrieval using SentenceTransformers and ChromaDB
+- Adaptive score fusion with query-dependent BM25/dense weighting
+- Retrieval feature extraction for V4 Rich query analysis
+- Local LLM generation via Ollama using qwen2.5:7b
+- User uploads and user-specific document indexing
+- Persistent authentication, chat history, and conversation management
+- Research dashboard and retrieval benchmark scripts
+- Domain-aware evaluation and adaptive-weight analysis
+
+## Technology stack
+
+Frontend
+- React 19
+- Vite 8
+- JavaScript / JSX
+- CSS
+- Lucide React
+
+Backend
+- Python 3.10+
+- FastAPI
+- SQLite
+- ChromaDB
+- rank-bm25
+- SentenceTransformers
+- scikit-learn
+- PyMuPDF / pypdf / python-docx
+- Ollama
 
-A research-oriented Retrieval-Augmented Generation (RAG) system that combines BM25 lexical retrieval, dense semantic retrieval, and query-dependent adaptive fusion to improve retrieval quality across different query types.
+## Repository structure
 
-The project also provides a complete user-facing workflow for uploading documents, asking questions, inspecting retrieval behavior, and viewing retrieval/generation metrics.
+```text
+adaptive-hybrid-rag/
+├── backend/
+│   ├── api/
+│   ├── config/
+│   ├── evaluation/
+│   ├── models/
+│   ├── services/
+│   ├── tests/
+│   ├── training/
+│   ├── app.py
+│   ├── main.py
+│   ├── requirements.txt
+│   └── sample_user_document*.txt
+├── data/
+├── frontend/
+│   ├── package.json
+│   ├── package-lock.json
+│   └── src/
+├── chroma_db/
+├── bm25_cache/
+├── .env.example
+├── .gitignore
+├── README.md
+├── requirements.txt
+├── SUBMISSION_CHECKLIST.md
+├── LICENSE
+└── ...
+```
 
-Overview
+## Prerequisites
 
-Traditional hybrid retrieval commonly uses a fixed BM25/Dense weighting such as:
+The project was developed and validated in a local Windows environment with the following expected setup:
 
-BM25 = 0.50
-Dense = 0.50
+- Git
+- Python 3.10 or newer
+- Node.js 18+ and npm
+- Ollama installed locally
+- A local model cache for sentence-transformers and a compatible CPU/GPU environment
 
-The problem is that different queries can favor different retrieval signals. Keyword-heavy queries may benefit more from lexical retrieval, while semantic or paraphrased queries may benefit more from dense retrieval.
+This project uses:
 
-This project therefore uses a learned retrieval-weight predictor to estimate the appropriate BM25/Dense balance for each query.
+- `all-MiniLM-L6-v2` as the embedding model
+- `qwen2.5:7b` as the local LLM model in Ollama
 
-                         User Query
-                              |
-                              v
-                    +-------------------+
-                    | Query Processing  |
-                    +-------------------+
-                              |
-                 +------------+------------+
-                 |                         |
-                 v                         v
-        +----------------+        +----------------+
-        | BM25 Retrieval |        | Dense Retrieval|
-        |  Top-50        |        |  Top-50        |
-        +----------------+        +----------------+
-                 |                         |
-                 +------------+------------+
-                              |
-                              v
-                  Retrieval Feature Extraction
-                              |
-                              v
-                 +---------------------------+
-                 | Adaptive Weight Predictor |
-                 |     Extra Trees / V4      |
-                 +---------------------------+
-                              |
-                    BM25 / Dense weights
-                              |
-                              v
-                     Adaptive Fusion
-                              |
-                              v
-                       Top-K Results
-                              |
-                              v
-                     Context Selection
-                              |
-                              v
-                         LLM / Qwen
-                              |
-                              v
-                         Final Answer
+## Clone and setup
 
-Key Features
+```powershell
+git clone https://github.com/Parasfunde21/adaptive-hybrid-rag.git
+cd adaptive-hybrid-rag
+```
 
-BM25 lexical retrieval
+## Python environment
 
-Dense semantic retrieval using Sentence Transformers
+Create and activate a local virtual environment in PowerShell:
 
-Adaptive BM25/Dense fusion
+```powershell
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+```
 
-Retrieval-diagnostic feature extraction
+Install backend dependencies:
 
-Learned adaptive weight prediction
+```powershell
+pip install -r backend\requirements.txt
+```
 
-Candidate retrieval before final Top-K fusion
+If you want a single root-level install entrypoint, the repository root `requirements.txt` now points to the backend dependency file:
 
-User PDF/document upload and indexing
+```powershell
+pip install -r requirements.txt
+```
 
-User-specific document retrieval
+## Frontend setup
 
-Conversational chat history
+Use the lockfile for reproducible installation:
 
-Persistent users and conversations
+```powershell
+cd frontend
+npm ci
+```
 
-Email verification backend
+If `npm ci` is unavailable because the lockfile has changed, use:
 
-Password reset backend
+```powershell
+npm install
+```
 
-Retrieval and generation latency measurement
+## Environment configuration
 
-Research dashboard with retrieval metrics
+Create a local environment file from the example template:
 
-Experimental benchmark visualization
+```powershell
+copy .env.example .env
+```
 
-Domain-wise evaluation
+Use the values in `.env.example` and do not commit real secrets or credentials. The frontend uses `VITE_API_BASE_URL` to reach the FastAPI server when it is not running on the default address.
 
-1,000-query multi-domain evaluation
+## Ollama setup and model pull
 
-Research Contribution
+Install Ollama from the official source for your platform and start the local service. Then pull the required model:
 
-The main research contribution is query-dependent retrieval weighting.
+```powershell
+ollama pull qwen2.5:7b
+```
 
-Instead of assuming that BM25 and dense retrieval should always receive the same weight, the system extracts retrieval and query characteristics and predicts a BM25 fusion weight:
+If Ollama is running locally on its standard host/port, the backend code can call it without additional configuration. An optional override is permitted through `OLLAMA_HOST` in the environment if needed.
 
-predicted_bm25_weight = f(query_features, retrieval_features)
+## Embedding-model cache
 
-predicted_dense_weight = 1 - predicted_bm25_weight
+The project expects the `all-MiniLM-L6-v2` model to be available in the local sentence-transformers cache.
 
-The final fused score is based on the independently normalized retrieval scores:
+If the model is not already cached, a one-time download is required from Hugging Face. In a network-enabled environment, use:
 
-Fused Score =
-    BM25 Weight × Normalized BM25 Score
-    +
-    Dense Weight × Normalized Dense Score
+```powershell
+python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
+```
 
-The model does not directly predict document relevance. It predicts the retrieval-fusion weight used to combine the two retrieval signals.
+This writes the model into the local cache directory configured by the sentence-transformers tooling. The runtime also sets `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1` in the embedding loader to ensure offline local-cache behavior.
 
-Adaptive Retrieval Features
+## Required model artifacts
 
-The V4 Rich feature set contains 17 features derived from query and retrieval behavior.
+The adaptive predictor relies on local trained artifacts under `backend/models`.
 
-BM25 features
+Expected files include:
 
-bm25_top_score
+- `backend/models/adaptive_weight_model_v4_rich.pkl`
+- `backend/models/adaptive_weight_model_v4.pkl`
+- other historical V3/V4 model files if you want to compare research variants
 
-bm25_mean_score
+If a model file is missing, regenerate it from the training pipeline.
 
-bm25_score_std
+Example:
 
-bm25_score_gap
+```powershell
+cd backend
+python training/train_v4_rich_model.py
+```
 
-bm25_top_mean_ratio
+This expects the feature training data to exist under `backend/evaluation/v4_analysis/` and writes the trained model back to `backend/models`.
 
-Dense features
+## Database and runtime initialization
 
-dense_top_similarity
+The backend expects a ChromaDB vector store, a BM25 cache, and a local SQLite database to be initialized or created on first run.
 
-dense_mean_similarity
+From the backend directory:
 
-dense_similarity_std
+```powershell
+cd backend
+python app.py
+```
 
-dense_similarity_gap
+This starts the FastAPI app and loads the ChromaDB collection and the embedding model. If the vector collection is empty, the project will fail fast with a clear error message rather than silently continuing.
 
-dense_top_mean_ratio
+The BM25 index is built lazily from ChromaDB into the `bm25_cache/` folder when it is missing or stale. Local SQLite databases and other generated runtime files are intentionally excluded from version control.
 
-Cross-retriever features
+## Vector database and BM25 cache setup
 
-overlap_ratio
+The ChromaDB collection is configured in `backend/config/settings.py` and points to the `chroma_db/` folder at the repository root.
 
-rank_agreement
+The BM25 cache is generated under:
 
-Query features
+```text
+bm25_cache/
+```
 
-query_token_count
+If this is your first local run, the system will create and populate the cache automatically when the backend initializes. The cache is versioned by collection and is rebuilt when the ChromaDB collection changes.
 
-query_unique_token_count
+## Startup commands
 
-query_avg_token_length
+Start the backend in one terminal:
 
-Lexical coverage
+```powershell
+cd adaptive-hybrid-rag
+.\venv\Scripts\Activate.ps1
+cd backend
+python app.py
+```
 
-bm25_top_lexical_coverage
+The backend uses FastAPI and is usually served at:
 
-dense_top_lexical_coverage
+- `http://127.0.0.1:8000`
+- health endpoint: `http://127.0.0.1:8000/health`
 
-These features describe how confident and consistent the retrieval systems appear for a particular query. The technical analysis found dense_top_lexical_coverage to be the strongest individual feature in the V4 Rich model.
+Start the frontend in a second terminal:
 
-V4 Rich Model
+```powershell
+cd adaptive-hybrid-rag\frontend
+npm ci
+npm run dev -- --host 0.0.0.0
+```
 
-The V4 Rich adaptive predictor uses an Extra Trees regression model.
+The Vite dev server typically runs on:
 
-Configuration
+- `http://localhost:5173`
 
-Model: ExtraTreesRegressor
-Estimators: 500
-Max features: 0.8
-Min samples leaf: 2
-Random state: 42
-Features: 17
+The frontend is configured to use `VITE_API_BASE_URL` with a fallback of `http://127.0.0.1:8000`.
 
-The model predicts a BM25 weight, which is clipped to the valid range:
+## Smoke test
 
-0 <= BM25 weight <= 1
-Dense weight = 1 - BM25 weight
+A basic end-to-end workflow is:
 
-The project also retains earlier V3 adaptive components as part of the research lineage and comparison.
+1. Start the backend and frontend.
+2. Open the frontend in the browser.
+3. Create an account or log in if authentication is enabled.
+4. Upload a document or use the sample text in `backend/sample_user_document.txt`.
+5. Ask a question such as:
+   - `What is adaptive hybrid retrieval?`
+   - `How does BM25 compare with dense retrieval in this project?`
+6. Confirm that the response contains a grounded answer, retrieval results, and latency metrics.
 
-Retrieval Configuration
+You can also test the API directly:
 
-The current retrieval configuration uses:
+```powershell
+curl http://127.0.0.1:8000/health
+```
 
-Candidate K : 50
-BM25 candidates : 50
-Dense candidates : 50
-Final K : 10
+For question submission:
 
-The larger candidate pool allows the adaptive fusion stage to select from a wider set of lexical and semantic candidates before producing the final Top-10 results.
+```powershell
+curl -X POST http://127.0.0.1:8000/ask \
+  -H "Content-Type: application/json" \
+  -d '{"query":"What is adaptive hybrid retrieval?"}'
+```
 
-Experimental Evaluation
+## Evaluation commands
 
-The current actual V4 benchmark contains:
+Benchmark scripts are available under `backend/evaluation`.
 
-Queries: 1,000
-Candidate K: 50
-Final K: 10
-Adaptive model: Extra Trees V4 Rich
+To run the current V4 benchmark:
 
-Fixed Hybrid vs Adaptive Hybrid
+```powershell
+cd backend
+python -m evaluation.benchmark_v4_rich_actual
+```
 
-Metric
+Other relevant scripts include:
 
-Fixed Hybrid
+```powershell
+python -m evaluation.benchmark_v3
+python -m evaluation.benchmark_v4_rich
+python evaluation/build_v4_rich_features.py
+```
 
-Adaptive Hybrid
+The evaluation scripts rely on the local benchmark datasets and feature-generation outputs already included in the repo under `backend/evaluation/` and `backend/training/`.
 
-Relative Change
+## Common errors and troubleshooting
 
-Precision@10
+### `ModuleNotFoundError` or package import errors
 
-0.1111
+Install the backend dependencies again inside the virtual environment:
 
-0.1148
+```powershell
+pip install -r backend\requirements.txt
+```
 
-+3.33%
+### ChromaDB collection is empty
 
-Recall@10
+The system expects a populated vector collection. Initialize or regenerate the local ChromaDB content before running the app.
 
-0.5189
+### BM25 cache not found
 
-0.5381
+The app automatically builds the BM25 cache the first time it runs. If the cache is stale or corrupted, delete the local `bm25_cache/` directory and restart the backend.
 
-+3.70%
+### Missing model artifact
 
-MRR
+If the adaptive predictor model is missing, recreate it using the training pipeline:
 
-0.4358
+```powershell
+cd backend
+python training/train_v4_rich_model.py
+```
 
-0.4340
+### Embedding model missing from cache
 
--0.40%
+Populate the local sentence-transformers cache once from a network-enabled environment using the command above. After that, the app can run in offline mode.
 
-nDCG@10
+### Ollama model not found
 
-0.4073
+Pull the model explicitly:
 
-0.4159
+```powershell
+ollama pull qwen2.5:7b
+```
 
-+2.09%
+### Frontend cannot reach backend
 
-The results show improvements in Precision@10, Recall@10, and nDCG@10 over the fixed hybrid configuration. MRR is slightly lower, so the result should be reported honestly rather than presenting the adaptive method as universally better.
+Confirm:
 
-Adaptive Effect Across Queries
+- backend is running on port 8000
+- frontend `VITE_API_BASE_URL` points to the correct host
+- no firewall or port conflict is blocking local traffic
 
-Out of 1,000 benchmark queries:
+## Notes on generated files and local artifacts
 
-Adaptive weights changed: 1000 / 1000
+This project intentionally excludes large local artifacts from version control. Some of them are generated on first run and can be very large:
 
-MRR:
-  Improved : 138
-  Equal    : 768
-  Decreased: 94
+- ChromaDB vector indexes under `chroma_db/`
+- BM25 cache under `bm25_cache/`
+- SQLite databases under `data/` or `backend/data/`
+- model downloads and caches for Hugging Face / sentence-transformers
+- local Ollama models and generated outputs
+
+These files should remain local to the machine unless a project-specific distribution mechanism is explicitly approved.
+
+## Security notes
+
+- Never commit real `.env` files or credentials.
+- Keep secrets, API keys, login tokens, and local environment data out of Git history.
+- Use `.env.example` only for safe placeholders and non-secret sample values.
+
+## Limitations and verification status
+
+The repository contains the complete research and application codebase, but some setup steps require local resources that are not always pre-populated in a fresh environment:
+
+- Ollama and the `qwen2.5:7b` model must be installed locally.
+- The embedding cache for `all-MiniLM-L6-v2` must be available.
+- Local ChromaDB and BM25 indexes are generated at runtime.
+- Adaptive predictor model files are local artifacts that may need to be reproduced from training data.
+
+The instructions in this README are based on the actual code in the repository and are intended to be followed as a reproducible setup guide. Where a step depends on a local artifact or a model download, the README labels that requirement clearly rather than implying it is already bundled in the repo.
+
+## License
+
+The repository currently serves as an academic and research project. Add a formal license if you plan to release the project outside the project or final-year academic context.
 
 nDCG:
   Improved : 209
