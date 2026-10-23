@@ -184,6 +184,10 @@ def main():
             "dense_distances"
         ]
 
+        dense_ids = retrieved[
+            "dense_ids"
+        ]
+
         bm25_docs = retrieved[
             "bm25_docs"
         ]
@@ -192,12 +196,17 @@ def main():
             "bm25_scores"
         ]
 
+        bm25_ids = retrieved[
+            "bm25_ids"
+        ]
+
         # ----------------------------------------------------
         # Features
         # ----------------------------------------------------
 
         features = (
             retrieval_feature_service.extract(
+                query=query,
 
                 bm25_scores=bm25_scores,
 
@@ -205,7 +214,9 @@ def main():
 
                 bm25_docs=bm25_docs,
 
-                dense_docs=dense_docs
+                dense_docs=dense_docs,
+                bm25_ids=bm25_ids,
+                dense_ids=dense_ids
 
             )
         )

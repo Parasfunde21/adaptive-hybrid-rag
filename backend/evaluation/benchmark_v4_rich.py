@@ -10,7 +10,10 @@ from services.retrieval_service import dense_search
 from services.fusion_service import fusion_service
 from services.hybrid_service import hybrid_search
 from services.adaptive_predictor_v3 import adaptive_predictor_v3
-from services.retrieval_feature_service import retrieval_feature_service
+from services.retrieval_feature_service import (
+    V4_RICH_FEATURES,
+    retrieval_feature_service,
+)
 
 
 BASE_DIR = Path(__file__).resolve().parents[1]
@@ -77,6 +80,8 @@ def get_v3(query):
         dense_distances,
         bm25_docs,
         dense_docs,
+        bm25_ids=bm25_ids,
+        dense_ids=dense_ids,
     )
 
     prediction = adaptive_predictor_v3.predict(
@@ -100,84 +105,27 @@ def get_v3(query):
     return results[:TOP_K], prediction["bm25_weight"]
 
 
-def tokenize(text):
-    import re
-    return re.findall(r"\b\w+\b", str(text).lower())
-
-
-def lexical_coverage(query, document):
-    query_tokens = set(tokenize(query))
-    if not query_tokens:
-        return 0.0
-    document_tokens = set(tokenize(document))
-    return len(query_tokens & document_tokens) / len(query_tokens)
-
-
-def build_rich_features(query, bm25_docs, bm25_scores, dense_docs, dense_distances):
-    bm25_scores = np.asarray(bm25_scores, dtype=float)
-    dense_distances = np.asarray(dense_distances, dtype=float)
-    dense_similarity = 1.0 - dense_distances
-
-    if len(bm25_scores):
-        bm25_top = float(bm25_scores[0])
-        bm25_mean = float(np.mean(bm25_scores))
-        bm25_std = float(np.std(bm25_scores))
-        bm25_gap = bm25_top - float(bm25_scores[1]) if len(bm25_scores) > 1 else bm25_top
-        bm25_ratio = bm25_top / bm25_mean if bm25_mean != 0 else 0.0
-    else:
-        bm25_top = bm25_mean = bm25_std = bm25_gap = bm25_ratio = 0.0
-
-    if len(dense_similarity):
-        dense_top = float(dense_similarity[0])
-        dense_mean = float(np.mean(dense_similarity))
-        dense_std = float(np.std(dense_similarity))
-        dense_gap = dense_top - float(dense_similarity[1]) if len(dense_similarity) > 1 else dense_top
-        dense_ratio = dense_top / dense_mean if dense_mean != 0 else 0.0
-    else:
-        dense_top = dense_mean = dense_std = dense_gap = dense_ratio = 0.0
-
-    bm25_set = set(bm25_docs)
-    dense_set = set(dense_docs)
-    union = bm25_set | dense_set
-    intersection = bm25_set & dense_set
-    overlap = len(intersection) / len(union) if union else 0.0
-
-    common = bm25_set & dense_set
-    if len(common) >= 2:
-        bm25_rank = {doc: rank for rank, doc in enumerate(bm25_docs)}
-        dense_rank = {doc: rank for rank, doc in enumerate(dense_docs)}
-        differences = [abs(bm25_rank[doc] - dense_rank[doc]) for doc in common]
-        rank_agreement = 1.0 - (np.mean(differences) / (TOP_K - 1))
-    else:
-        rank_agreement = 0.0
-
-    tokens = tokenize(query)
-    unique_tokens = set(tokens)
-    query_count = len(tokens)
-    unique_count = len(unique_tokens)
-    avg_length = sum(len(token) for token in tokens) / query_count if query_count else 0.0
-
-    bm25_coverage = lexical_coverage(query, bm25_docs[0]) if bm25_docs else 0.0
-    dense_coverage = lexical_coverage(query, dense_docs[0]) if dense_docs else 0.0
-
+def build_rich_features(
+    query,
+    bm25_docs,
+    bm25_scores,
+    dense_docs,
+    dense_distances,
+    bm25_ids,
+    dense_ids,
+):
+    features = retrieval_feature_service.extract(
+        query=query,
+        bm25_scores=bm25_scores,
+        dense_distances=dense_distances,
+        bm25_docs=bm25_docs,
+        dense_docs=dense_docs,
+        bm25_ids=bm25_ids,
+        dense_ids=dense_ids,
+    )
     return {
-        "bm25_top_score": bm25_top,
-        "bm25_mean_score": bm25_mean,
-        "bm25_score_std": bm25_std,
-        "bm25_score_gap": bm25_gap,
-        "bm25_top_mean_ratio": bm25_ratio,
-        "dense_top_similarity": dense_top,
-        "dense_mean_similarity": dense_mean,
-        "dense_similarity_std": dense_std,
-        "dense_similarity_gap": dense_gap,
-        "dense_top_mean_ratio": dense_ratio,
-        "overlap_ratio": overlap,
-        "rank_agreement": rank_agreement,
-        "query_token_count": query_count,
-        "query_unique_token_count": unique_count,
-        "query_avg_token_length": avg_length,
-        "bm25_top_lexical_coverage": bm25_coverage,
-        "dense_top_lexical_coverage": dense_coverage,
+        feature: features[feature]
+        for feature in V4_RICH_FEATURES
     }
 
 
@@ -188,7 +136,15 @@ def get_v4_rich(query, model, prediction_map):
     if query in prediction_map:
         bm25_weight = float(prediction_map[query])
     else:
-        features = build_rich_features(query, bm25_docs, bm25_scores, dense_docs, dense_distances)
+        features = build_rich_features(
+            query,
+            bm25_docs,
+            bm25_scores,
+            dense_docs,
+            dense_distances,
+            bm25_ids=bm25_ids,
+            dense_ids=dense_ids,
+        )
         feature_order = [
             "bm25_top_score",
             "bm25_mean_score",

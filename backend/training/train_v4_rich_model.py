@@ -9,6 +9,8 @@ from sklearn.ensemble import ExtraTreesRegressor, RandomForestRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 
+from services.retrieval_feature_service import V4_RICH_FEATURES
+
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 
@@ -26,29 +28,7 @@ MODEL_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
-FEATURES = [
-    "bm25_top_score",
-    "bm25_mean_score",
-    "bm25_score_std",
-    "bm25_score_gap",
-    "bm25_top_mean_ratio",
-
-    "dense_top_similarity",
-    "dense_mean_similarity",
-    "dense_similarity_std",
-    "dense_similarity_gap",
-    "dense_top_mean_ratio",
-
-    "overlap_ratio",
-    "rank_agreement",
-
-    "query_token_count",
-    "query_unique_token_count",
-    "query_avg_token_length",
-
-    "bm25_top_lexical_coverage",
-    "dense_top_lexical_coverage",
-]
+FEATURES = list(V4_RICH_FEATURES)
 
 TARGET = "oracle_bm25_weight"
 
