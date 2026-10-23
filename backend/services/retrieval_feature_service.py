@@ -2,21 +2,36 @@ import re
 import numpy as np
 
 
+V4_RICH_FEATURES = (
+    "bm25_top_score",
+    "bm25_mean_score",
+    "bm25_score_std",
+    "bm25_score_gap",
+    "bm25_top_mean_ratio",
+    "dense_top_similarity",
+    "dense_mean_similarity",
+    "dense_similarity_std",
+    "dense_similarity_gap",
+    "dense_top_mean_ratio",
+    "overlap_ratio",
+    "rank_agreement",
+    "query_token_count",
+    "query_unique_token_count",
+    "query_avg_token_length",
+    "bm25_top_lexical_coverage",
+    "dense_top_lexical_coverage",
+)
+
+V4_RICH_FEATURE_TOP_K = 10
+
+
 class RetrievalFeatureService:
     """
     Extract retrieval features used by the adaptive RAG pipeline.
 
-    This implementation is intentionally backward compatible with:
+    Supported calls:
 
-    1. Legacy V3 positional call:
-       extract(
-           bm25_scores,
-           dense_distances,
-           bm25_docs,
-           dense_docs
-       )
-
-    2. V4 positional call:
+    1. V4 positional call:
        extract(
            query,
            bm25_scores,
@@ -25,7 +40,7 @@ class RetrievalFeatureService:
            dense_docs
        )
 
-    3. Keyword-based calls:
+    2. Keyword-based calls:
        extract(
            query=query,
            bm25_scores=...,
@@ -34,7 +49,7 @@ class RetrievalFeatureService:
            dense_docs=...
        )
 
-    4. Mixed calls:
+    3. Mixed calls:
        extract(
            query,
            bm25_scores=...,
@@ -48,6 +63,12 @@ class RetrievalFeatureService:
     # Tokenization
     # ============================================================
 
+    def __init__(self, top_k=V4_RICH_FEATURE_TOP_K):
+        if top_k <= 0:
+            raise ValueError("top_k must be greater than zero.")
+
+        self.top_k = top_k
+
     @staticmethod
     def tokenize(text):
 
@@ -55,7 +76,7 @@ class RetrievalFeatureService:
             return []
 
         return re.findall(
-            r"\b[\w+#]+\b",
+            r"\b\w+\b",
             str(text).lower()
         )
 
@@ -108,12 +129,6 @@ class RetrievalFeatureService:
 
         Supported forms:
 
-        4 positional:
-            bm25_scores,
-            dense_distances,
-            bm25_docs,
-            dense_docs
-
         5 positional:
             query,
             bm25_scores,
@@ -160,6 +175,16 @@ class RetrievalFeatureService:
 
         dense_docs = kwargs.pop(
             "dense_docs",
+            None
+        )
+
+        bm25_ids = kwargs.pop(
+            "bm25_ids",
+            None
+        )
+
+        dense_ids = kwargs.pop(
+            "dense_ids",
             None
         )
 
@@ -220,57 +245,6 @@ class RetrievalFeatureService:
                 dense_docs
             ) = args
 
-        elif len(args) == 4:
-
-            # Legacy V3:
-            #
-            # extract(
-            #     bm25_scores,
-            #     dense_distances,
-            #     bm25_docs,
-            #     dense_docs
-            # )
-
-            if query is not None:
-
-                raise TypeError(
-                    "Ambiguous 4 positional arguments with "
-                    "query keyword."
-                )
-
-            if bm25_scores is not None:
-                raise TypeError(
-                    "bm25_scores was provided both "
-                    "positionally and as a keyword."
-                )
-
-            if dense_distances is not None:
-                raise TypeError(
-                    "dense_distances was provided both "
-                    "positionally and as a keyword."
-                )
-
-            if bm25_docs is not None:
-                raise TypeError(
-                    "bm25_docs was provided both "
-                    "positionally and as a keyword."
-                )
-
-            if dense_docs is not None:
-                raise TypeError(
-                    "dense_docs was provided both "
-                    "positionally and as a keyword."
-                )
-
-            (
-                bm25_scores,
-                dense_distances,
-                bm25_docs,
-                dense_docs
-            ) = args
-
-            query = ""
-
         elif len(args) == 1:
 
             # Mixed call:
@@ -305,31 +279,52 @@ class RetrievalFeatureService:
                 f"Received {len(args)} positional arguments."
             )
 
-        # --------------------------------------------------------
-        # Defaults
-        # --------------------------------------------------------
+        missing = [
+            name
+            for name, value in (
+                ("query", query),
+                ("bm25_scores", bm25_scores),
+                ("dense_distances", dense_distances),
+                ("bm25_docs", bm25_docs),
+                ("dense_docs", dense_docs),
+            )
+            if value is None
+        ]
 
-        if query is None:
-            query = ""
+        if missing:
+            raise ValueError(
+                "Missing required retrieval feature inputs: "
+                f"{', '.join(missing)}"
+            )
 
-        if bm25_scores is None:
-            bm25_scores = []
+        if not isinstance(query, str):
+            raise TypeError("query must be a string.")
 
-        if dense_distances is None:
-            dense_distances = []
+        if not query.strip():
+            raise ValueError("query must not be empty.")
 
-        if bm25_docs is None:
-            bm25_docs = []
-
-        if dense_docs is None:
-            dense_docs = []
+        missing_ids = [
+            name
+            for name, value in (
+                ("bm25_ids", bm25_ids),
+                ("dense_ids", dense_ids),
+            )
+            if value is None
+        ]
+        if missing_ids:
+            raise ValueError(
+                "Missing required retrieval feature inputs: "
+                f"{', '.join(missing_ids)}"
+            )
 
         return (
             query,
             bm25_scores,
             dense_distances,
             bm25_docs,
-            dense_docs
+            dense_docs,
+            bm25_ids,
+            dense_ids,
         )
 
     # ============================================================
@@ -347,7 +342,9 @@ class RetrievalFeatureService:
             bm25_scores,
             dense_distances,
             bm25_docs,
-            dense_docs
+            dense_docs,
+            bm25_ids,
+            dense_ids,
         ) = self._resolve_arguments(
             args,
             kwargs
@@ -373,6 +370,51 @@ class RetrievalFeatureService:
 
         dense_docs = list(
             dense_docs
+        )
+
+        if bm25_ids is not None:
+            bm25_ids = list(bm25_ids)
+            if len(bm25_ids) != len(bm25_docs):
+                raise ValueError(
+                    "bm25_ids and bm25_docs must have equal lengths."
+                )
+
+        if dense_ids is not None:
+            dense_ids = list(dense_ids)
+            if len(dense_ids) != len(dense_docs):
+                raise ValueError(
+                    "dense_ids and dense_docs must have equal lengths."
+                )
+
+        if len(bm25_scores) != len(bm25_docs):
+            raise ValueError(
+                "bm25_scores and bm25_docs must have equal lengths."
+            )
+
+        if len(dense_distances) != len(dense_docs):
+            raise ValueError(
+                "dense_distances and dense_docs must have equal lengths."
+            )
+
+        if not np.isfinite(bm25_scores).all():
+            raise ValueError("bm25_scores must contain only finite values.")
+
+        if not np.isfinite(dense_distances).all():
+            raise ValueError("dense_distances must contain only finite values.")
+
+        bm25_scores = bm25_scores[:self.top_k]
+        dense_distances = dense_distances[:self.top_k]
+        bm25_docs = bm25_docs[:self.top_k]
+        dense_docs = dense_docs[:self.top_k]
+        bm25_keys = (
+            bm25_ids[:self.top_k]
+            if bm25_ids is not None
+            else bm25_docs
+        )
+        dense_keys = (
+            dense_ids[:self.top_k]
+            if dense_ids is not None
+            else dense_docs
         )
 
         # ========================================================
@@ -413,7 +455,7 @@ class RetrievalFeatureService:
 
                 if len(bm25_scores) > 1
 
-                else 0.0
+                else bm25_top
             )
 
             bm25_top_mean_ratio = (
@@ -444,13 +486,7 @@ class RetrievalFeatureService:
 
         dense_similarities = np.asarray(
             [
-                1.0
-                /
-                (
-                    1.0
-                    +
-                    float(distance)
-                )
+                1.0 - float(distance)
 
                 for distance
                 in dense_distances
@@ -496,7 +532,7 @@ class RetrievalFeatureService:
 
                 if len(dense_similarities) > 1
 
-                else 0.0
+                else dense_top
             )
 
             dense_top_mean_ratio = (
@@ -525,13 +561,9 @@ class RetrievalFeatureService:
         # Retrieval Overlap
         # ========================================================
 
-        bm25_set = set(
-            bm25_docs
-        )
+        bm25_set = set(bm25_keys)
 
-        dense_set = set(
-            dense_docs
-        )
+        dense_set = set(dense_keys)
 
         union = (
             bm25_set
@@ -564,7 +596,7 @@ class RetrievalFeatureService:
 
             for rank, doc
             in enumerate(
-                dense_docs,
+                dense_keys,
                 start=1
             )
         }
@@ -575,7 +607,7 @@ class RetrievalFeatureService:
 
             for rank, doc
             in enumerate(
-                bm25_docs,
+                bm25_keys,
                 start=1
             )
         }
@@ -586,7 +618,7 @@ class RetrievalFeatureService:
             set(bm25_rank)
         )
 
-        if common_docs:
+        if len(common_docs) >= 2:
 
             differences = [
 
@@ -600,11 +632,7 @@ class RetrievalFeatureService:
                 in common_docs
             ]
 
-            max_rank = max(
-                len(dense_docs),
-                len(bm25_docs),
-                1
-            )
+            max_rank = self.top_k - 1
 
             rank_agreement = float(
                 np.clip(

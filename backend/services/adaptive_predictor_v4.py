@@ -1,8 +1,8 @@
 import os
 import joblib
 import numpy as np
-import pandas as pd
 
+from services.retrieval_feature_service import V4_RICH_FEATURES
 
 MODEL_PATH = os.path.join(
     "models",
@@ -26,29 +26,7 @@ class AdaptivePredictorV4:
 
             self.model = joblib.load(file)
 
-        self.features = [
-            "bm25_top_score",
-            "bm25_mean_score",
-            "bm25_score_std",
-            "bm25_score_gap",
-            "bm25_top_mean_ratio",
-
-            "dense_top_similarity",
-            "dense_mean_similarity",
-            "dense_similarity_std",
-            "dense_similarity_gap",
-            "dense_top_mean_ratio",
-
-            "overlap_ratio",
-            "rank_agreement",
-
-            "query_token_count",
-            "query_unique_token_count",
-            "query_avg_token_length",
-
-            "bm25_top_lexical_coverage",
-            "dense_top_lexical_coverage",
-        ]
+        self.features = list(V4_RICH_FEATURES)
 
     def predict(
         self,
@@ -56,18 +34,36 @@ class AdaptivePredictorV4:
         retrieval_features
     ):
 
-        row = [
-            retrieval_features.get(
-                feature,
-                np.nan
-            )
+        missing = [
+            feature
             for feature in self.features
+            if feature not in retrieval_features
         ]
 
-        x = pd.DataFrame(
-            [row],
-            columns=self.features
-        )
+        if missing:
+            raise ValueError(
+                "Missing required V4 retrieval features: "
+                f"{', '.join(missing)}"
+            )
+
+        row = []
+        for feature in self.features:
+            value = retrieval_features[feature]
+            try:
+                numeric_value = float(value)
+            except (TypeError, ValueError) as error:
+                raise ValueError(
+                    f"V4 retrieval feature '{feature}' must be numeric."
+                ) from error
+
+            if not np.isfinite(numeric_value):
+                raise ValueError(
+                    f"V4 retrieval feature '{feature}' must be finite."
+                )
+
+            row.append(numeric_value)
+
+        x = np.asarray([row], dtype=np.float64)
 
         predicted_bm25_weight = float(
             self.model.predict(x)[0]

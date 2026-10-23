@@ -1,5 +1,6 @@
 import "./App.css";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import LandingPage from "./LandingPage.jsx";
 import {
   Activity,
   ArrowUp,
@@ -17,10 +18,8 @@ import {
   Network,
   Plus,
   Search,
-  Send,
   Settings2,
   Sparkles,
-  Trash2,
   Upload,
   Eye,
   EyeOff, 
@@ -105,11 +104,13 @@ async function apiRequest(path, options = {}) {
   }
 
   if (!response.ok) {
-    throw new Error(
+    const error = new Error(
       data?.detail ||
         data?.message ||
         `Request failed with status ${response.status}`
     );
+    error.status = response.status;
+    throw error;
   }
 
   return data;
@@ -122,20 +123,6 @@ function formatTime(value) {
     return new Date(value).toLocaleTimeString([], {
       hour: "2-digit",
       minute: "2-digit",
-    });
-  } catch {
-    return "";
-  }
-}
-
-function formatDate(value) {
-  if (!value) return "";
-
-  try {
-    return new Date(value).toLocaleDateString([], {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
     });
   } catch {
     return "";
@@ -164,56 +151,6 @@ function formatPercent(value) {
   if (!Number.isFinite(number)) return "—";
 
   return `${(number * 100).toFixed(1)}%`;
-}
-
-function getGenerationMs(rag) {
-  const metrics = rag?.retrieval_metrics || {};
-  const candidates = [
-    rag?.latency?.generation_ms,
-    metrics.generation_ms,
-    metrics.generation_latency_ms,
-    metrics.generation_time_ms,
-    rag?.generation_ms,
-    rag?.generation_latency_ms,
-    rag?.generation_time_ms,
-    rag?.generation_metrics?.generation_ms,
-    rag?.generation_metrics?.latency_ms,
-    rag?.generation?.generation_ms,
-    rag?.generation?.latency_ms,
-    rag?.timings?.generation_ms,
-  ];
-
-  for (const value of candidates) {
-    const number = Number(value);
-    if (Number.isFinite(number) && number > 0) {
-      return number;
-    }
-  }
-
-  // Some backend responses expose only total runtime and retrieval runtime.
-  // Use their positive difference as a fallback instead of displaying 0ms.
-  const totalMs = Number(
-    rag?.latency?.total_ms ??
-    metrics.total_ms ??
-      rag?.total_ms ??
-      rag?.timings?.total_ms
-  );
-  const retrievalMs = Number(
-    rag?.latency?.retrieval_ms ??
-    metrics.total_retrieval_ms ??
-      rag?.retrieval_ms ??
-      rag?.timings?.retrieval_ms
-  );
-
-  if (
-    Number.isFinite(totalMs) &&
-    Number.isFinite(retrievalMs) &&
-    totalMs > retrievalMs
-  ) {
-    return totalMs - retrievalMs;
-  }
-
-  return null;
 }
 
 function formatMetricValue(value, key) {
@@ -330,8 +267,8 @@ function renderMarkdown(text = "") {
   );
 }
 
-function AuthScreen({ onAuthenticated }) {
-  const [mode, setMode] = useState("login");
+function AuthScreen({ onAuthenticated, initialMode = "login" }) {
+  const [mode, setMode] = useState(initialMode);
   const [verificationEmail, setVerificationEmail] = useState("");
   const [usernameOrEmail, setUsernameOrEmail] = useState("");
   const [username, setUsername] = useState("");
@@ -1443,7 +1380,8 @@ function ContextStat({ label, value }) {
 
 function App() {
   const [user, setUser] = useState(getStoredUser);
-  const [booting, setBooting] = useState(true);
+  const [booting, setBooting] = useState(Boolean(getStoredUser()));
+  const [currentPath, setCurrentPath] = useState(() => window.location.pathname || "/");
 
   const [conversations, setConversations] =
     useState([]);
@@ -1496,32 +1434,74 @@ function App() {
   );
 
   useEffect(() => {
-    if (!user) {
-      setBooting(false);
-      return;
-    }
+    const syncPath = () => setCurrentPath(window.location.pathname || "/");
 
-    verifySession();
+    syncPath();
+    window.addEventListener("popstate", syncPath);
+
+    return () => window.removeEventListener("popstate", syncPath);
   }, []);
 
-  async function verifySession() {
-    try {
-      const data = await apiRequest("/auth/me");
+  function navigateTo(path) {
+    const nextPath = path.startsWith("/") ? path : `/${path}`;
 
-      setUser(data.user);
-
-      await Promise.all([
-        loadConversations(),
-        loadDocuments(),
-      ]);
-    } catch {
-      logout();
-    } finally {
-      setBooting(false);
+    if (window.location.pathname !== nextPath) {
+      window.history.pushState({}, "", nextPath);
     }
+
+    setCurrentPath(nextPath);
   }
 
-  async function loadConversations() {
+  const logout = useCallback(function logout() {
+    localStorage.removeItem("ahr_token");
+    localStorage.removeItem("ahr_user");
+    setUser(null);
+    setConversations([]);
+    setMessages([]);
+    setDocuments([]);
+    setLatestRag(null);
+    setActiveConversationId(null);
+
+    const nextPath = "/";
+    window.history.pushState({}, "", nextPath);
+    setCurrentPath(nextPath);
+  }, []);
+
+  const loadDocuments = useCallback(async function loadDocuments() {
+    try {
+      const data = await apiRequest(
+        "/user/documents"
+      );
+
+      setDocuments(data.documents || []);
+    } catch {
+      setDocuments([]);
+    }
+  }, []);
+
+  const loadConversation = useCallback(async function loadConversation(id) {
+    if (!id) return;
+
+    setLoadingConversation(true);
+    setError("");
+    setLatestRag(null);
+
+    try {
+      const data = await apiRequest(
+        `/conversations/${id}`
+      );
+
+      setMessages(data.messages || []);
+
+      setActiveConversationId(id);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoadingConversation(false);
+    }
+  }, []);
+
+  const loadConversations = useCallback(async function loadConversations() {
     setLoadingConversations(true);
 
     try {
@@ -1548,41 +1528,39 @@ function App() {
     } finally {
       setLoadingConversations(false);
     }
-  }
+  }, [activeConversationId, loadConversation]);
 
-  async function loadDocuments() {
+  const verifySession = useCallback(async function verifySession() {
     try {
-      const data = await apiRequest(
-        "/user/documents"
+      await apiRequest("/auth/me");
+
+      await Promise.all([
+        loadConversations(),
+        loadDocuments(),
+      ]);
+    } catch (error) {
+      if (error?.status === 401 || error?.status === 403) {
+        logout();
+        return;
+      }
+
+      setError(
+        error?.message ||
+          "Your session could not be refreshed. Please try again."
       );
-
-      setDocuments(data.documents || []);
-    } catch {
-      setDocuments([]);
-    }
-  }
-
-  async function loadConversation(id) {
-    if (!id) return;
-
-    setLoadingConversation(true);
-    setError("");
-    setLatestRag(null);
-
-    try {
-      const data = await apiRequest(
-        `/conversations/${id}`
-      );
-
-      setMessages(data.messages || []);
-
-      setActiveConversationId(id);
-    } catch (err) {
-      setError(err.message);
     } finally {
-      setLoadingConversation(false);
+      setBooting(false);
     }
-  }
+  }, [loadConversations, loadDocuments, logout]);
+
+  useEffect(() => {
+    if (!user) {
+      setBooting(false);
+      return;
+    }
+
+    verifySession();
+  }, [user, verifySession]);
 
   async function createConversation() {
     setError("");
@@ -1797,23 +1775,20 @@ function App() {
     }
   }
 
-  function logout() {
-    localStorage.removeItem("ahr_token");
-    localStorage.removeItem("ahr_user");
-    setUser(null);
-    setConversations([]);
-    setMessages([]);
-    setDocuments([]);
-    setLatestRag(null);
-    setActiveConversationId(null);
-  }
-
   function handleKeyDown(event) {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       sendMessage();
     }
   }
+
+  const normalizedPath = currentPath === "/" ? "/" : (currentPath || "/").replace(/\/+$/, "") || "/";
+
+  useEffect(() => {
+    if (!user && !["/", "/login", "/register"].includes(normalizedPath)) {
+      navigateTo("/");
+    }
+  }, [user, normalizedPath]);
 
   if (booting) {
     return (
@@ -1834,18 +1809,24 @@ function App() {
   }
 
   if (!user) {
-    return (
-      <AuthScreen
-        onAuthenticated={(nextUser) => {
-          setUser(nextUser);
-          setBooting(true);
+    if (normalizedPath === "/") {
+      return <LandingPage onNavigate={navigateTo} />;
+    }
 
-          setTimeout(() => {
-            verifySession();
-          }, 0);
-        }}
-      />
-    );
+    if (normalizedPath === "/login" || normalizedPath === "/register") {
+      return (
+        <AuthScreen
+          key={normalizedPath}
+          initialMode={normalizedPath === "/register" ? "register" : "login"}
+          onAuthenticated={(nextUser) => {
+            setUser(nextUser);
+            setBooting(true);
+          }}
+        />
+      );
+    }
+
+    return <LandingPage onNavigate={navigateTo} />;
   }
 
   return (
