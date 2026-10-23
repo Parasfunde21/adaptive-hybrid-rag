@@ -8,16 +8,23 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 import csv
+import hashlib
 import json
 import math
 import time
+from datetime import datetime, timezone
 from collections import defaultdict
 
 from services.bm25_service import bm25_search
 from services.retrieval_service import dense_search
 from services.adaptive_predictor_v4 import adaptive_predictor_v4
-from services.retrieval_feature_service import retrieval_feature_service
+from services.retrieval_feature_service import (
+    V4_RICH_FEATURES,
+    V4_RICH_FEATURE_TOP_K,
+    retrieval_feature_service,
+)
 from services.fusion_service import fusion_service
+from config.settings import COLLECTION_NAME, EMBEDDING_MODEL
 
 # ============================================================
 # Paths
@@ -36,14 +43,20 @@ BENCHMARK_FILE = (
 RESULTS_DIR = (
     BASE_DIR
     / "evaluation"
-    / "dataset_v2"
-    / "results"
-    / "v4_actual"
+    / "corrected_v4_audit"
+    / "runs"
 )
-
-RESULTS_DIR.mkdir(
-    parents=True,
-    exist_ok=True,
+BENCHMARK_MANIFEST = (
+    BASE_DIR
+    / "evaluation"
+    / "dataset_v2"
+    / "benchmark"
+    / "benchmark_manifest.json"
+)
+ADAPTIVE_MODEL_FILE = (
+    BASE_DIR
+    / "models"
+    / "adaptive_weight_model_v4_rich.pkl"
 )
 
 
@@ -56,6 +69,7 @@ CANDIDATE_K = 50
 
 FIXED_BM25_WEIGHT = 0.50
 FIXED_DENSE_WEIGHT = 0.50
+RRF_K = 60
 
 
 # ============================================================
@@ -84,6 +98,23 @@ def load_queries():
             )
 
     return rows
+
+
+def create_run_directory():
+    run_id = datetime.now(timezone.utc).strftime(
+        "%Y%m%dT%H%M%S%fZ"
+    )
+    run_dir = RESULTS_DIR / run_id
+    run_dir.mkdir(parents=True, exist_ok=False)
+    return run_dir
+
+
+def sha256_file(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as file:
+        for chunk in iter(lambda: file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 # ============================================================
@@ -321,15 +352,26 @@ def normalize_results(
 def reciprocal_rank_fusion(
     dense_ids,
     bm25_ids,
+    dense_metadatas,
+    bm25_metadatas,
     k=60,
 ):
+
+    if len(dense_ids) != len(dense_metadatas):
+        raise ValueError(
+            "dense_ids and dense_metadatas must have equal lengths."
+        )
+    if len(bm25_ids) != len(bm25_metadatas):
+        raise ValueError(
+            "bm25_ids and bm25_metadatas must have equal lengths."
+        )
 
     scores = defaultdict(float)
 
     metadata = {}
 
-    for rank, document_id in enumerate(
-        dense_ids,
+    for rank, (document_id, item_metadata) in enumerate(
+        zip(dense_ids, dense_metadatas),
         start=1,
     ):
 
@@ -341,9 +383,10 @@ def reciprocal_rank_fusion(
             1.0
             / (k + rank)
         )
+        metadata.setdefault(document_id, item_metadata or {})
 
-    for rank, document_id in enumerate(
-        bm25_ids,
+    for rank, (document_id, item_metadata) in enumerate(
+        zip(bm25_ids, bm25_metadatas),
         start=1,
     ):
 
@@ -355,6 +398,7 @@ def reciprocal_rank_fusion(
             1.0
             / (k + rank)
         )
+        metadata.setdefault(document_id, item_metadata or {})
 
     ranked = sorted(
         scores.items(),
@@ -382,6 +426,84 @@ def reciprocal_rank_fusion(
 def evaluate():
 
     queries = load_queries()
+    run_dir = create_run_directory()
+    manifest = json.loads(
+        BENCHMARK_MANIFEST.read_text(encoding="utf-8")
+    )
+    expected_query_count = manifest["total_queries"]
+    if len(queries) != expected_query_count:
+        raise ValueError(
+            f"Expected {expected_query_count} benchmark queries, "
+            f"found {len(queries)}."
+        )
+    query_ids = [str(row["query_id"]) for row in queries]
+    if len(set(query_ids)) != len(query_ids):
+        raise ValueError("Benchmark query IDs must be unique.")
+
+    run_manifest = {
+        "status": "running",
+        "started_utc": datetime.now(timezone.utc).isoformat(),
+        "benchmark_file": str(BENCHMARK_FILE.relative_to(BASE_DIR)),
+        "benchmark_version": manifest["benchmark_version"],
+        "dataset_names": sorted(manifest["datasets"]),
+        "queries_by_dataset": {
+            dataset: sum(
+                row.get("dataset") == dataset
+                for row in queries
+            )
+            for dataset in sorted(manifest["datasets"])
+        },
+        "random_seed": manifest.get("random_seed"),
+        "benchmark_manifest_file": str(
+            BENCHMARK_MANIFEST.relative_to(BASE_DIR)
+        ),
+        "benchmark_manifest_sha256": sha256_file(BENCHMARK_MANIFEST),
+        "qrels_source": "relevant_documents embedded in benchmark_queries.jsonl",
+        "benchmark_queries_sha256": sha256_file(BENCHMARK_FILE),
+        "query_count": len(queries),
+        "candidate_depth": CANDIDATE_K,
+        "feature_top_k": V4_RICH_FEATURE_TOP_K,
+        "final_top_k": TOP_K,
+        "feature_schema": list(V4_RICH_FEATURES),
+        "adaptive_model": {
+            "path": str(ADAPTIVE_MODEL_FILE.relative_to(BASE_DIR)),
+            "sha256": sha256_file(ADAPTIVE_MODEL_FILE),
+        },
+        "retrieval_config": {
+            "collection": COLLECTION_NAME,
+            "embedding_model": EMBEDDING_MODEL,
+            "embedding_normalized": False,
+            "dense_distance_space": "l2",
+        },
+        "methods": [
+            "BM25",
+            "Dense",
+            "Fixed Hybrid (0.50)",
+            "Adaptive Hybrid",
+            "RRF",
+        ],
+        "latency_components": [
+            "BM25 retrieval",
+            "dense retrieval",
+            "feature extraction",
+            "adaptive prediction",
+            "fusion",
+        ],
+        "reranking_executed": False,
+        "generation_executed": False,
+        "training_evaluation_independence": "unverified",
+        "evaluation_set_derived_weights_used": False,
+        "latency_methodology": (
+            "per-query wall time for retrieval-only (applicable BM25 and/or "
+            "dense retrieval) and complete retrieval pipeline (retrieval, "
+            "feature extraction, prediction, fusion); reranking and "
+            "generation are excluded"
+        ),
+    }
+    (run_dir / "run_manifest.json").write_text(
+        json.dumps(run_manifest, indent=2),
+        encoding="utf-8",
+    )
 
     print("=" * 80)
     print("V4 RICH ACTUAL BENCHMARK")
@@ -403,7 +525,8 @@ def evaluate():
     methods = [
         "BM25",
         "Dense",
-        "Fixed Hybrid",
+        "RRF",
+        "Fixed Hybrid (0.50)",
         "Adaptive Hybrid",
     ]
 
@@ -436,6 +559,8 @@ def evaluate():
     comparison_rows = []
 
     weight_rows = []
+    query_method_rows = []
+    timing_rows = []
 
     for index, row in enumerate(
         queries,
@@ -597,21 +722,28 @@ def evaluate():
         # Features + V4 Prediction
         # ====================================================
 
+        feature_start = time.perf_counter()
         features = (
             retrieval_feature_service.extract(
+                query=query,
                 bm25_scores=bm25_scores,
                 dense_distances=dense_distances,
                 bm25_docs=bm25_docs,
                 dense_docs=dense_docs,
+                bm25_ids=bm25_ids,
+                dense_ids=dense_ids,
             )
         )
+        feature_latency = time.perf_counter() - feature_start
 
+        prediction_start = time.perf_counter()
         prediction = (
             adaptive_predictor_v4.predict(
                 query=query,
                 retrieval_features=features,
             )
         )
+        prediction_latency = time.perf_counter() - prediction_start
 
         bm25_weight = prediction[
             "bm25_weight"
@@ -638,6 +770,7 @@ def evaluate():
         # Fixed Hybrid
         # ====================================================
 
+        fixed_start = time.perf_counter()
         fixed_fused = (
             fusion_service.fuse(
                 dense_docs=dense_docs,
@@ -652,15 +785,27 @@ def evaluate():
                 bm25_weight=FIXED_BM25_WEIGHT,
             )
         )
+        fixed_latency = time.perf_counter() - fixed_start
 
         fixed_results = normalize_results(
             fixed_fused
         )
 
+        rrf_start = time.perf_counter()
+        rrf_results = reciprocal_rank_fusion(
+            dense_ids,
+            bm25_ids,
+            dense_metadatas,
+            bm25_metadatas,
+            k=RRF_K,
+        )
+        rrf_latency = time.perf_counter() - rrf_start
+
         # ====================================================
         # Adaptive V4 Hybrid
         # ====================================================
 
+        adaptive_start = time.perf_counter()
         adaptive_fused = (
             fusion_service.fuse(
                 dense_docs=dense_docs,
@@ -675,6 +820,7 @@ def evaluate():
                 bm25_weight=bm25_weight,
             )
         )
+        adaptive_latency = time.perf_counter() - adaptive_start
 
         adaptive_results = normalize_results(
             adaptive_fused
@@ -687,7 +833,8 @@ def evaluate():
         result_sets = {
             "BM25": bm25_results,
             "Dense": dense_results,
-            "Fixed Hybrid": fixed_results,
+            "RRF": rrf_results,
+            "Fixed Hybrid (0.50)": fixed_results,
             "Adaptive Hybrid": adaptive_results,
         }
 
@@ -696,16 +843,39 @@ def evaluate():
         for method, results in result_sets.items():
 
             if method == "BM25":
-                latency = bm25_latency
-
+                components = {
+                    "bm25_retrieval_seconds": bm25_latency,
+                    "dense_retrieval_seconds": 0.0,
+                    "feature_extraction_seconds": 0.0,
+                    "adaptive_prediction_seconds": 0.0,
+                    "fusion_seconds": 0.0,
+                }
             elif method == "Dense":
-                latency = dense_latency
-
+                components = {
+                    "bm25_retrieval_seconds": 0.0,
+                    "dense_retrieval_seconds": dense_latency,
+                    "feature_extraction_seconds": 0.0,
+                    "adaptive_prediction_seconds": 0.0,
+                    "fusion_seconds": 0.0,
+                }
             else:
-                latency = (
-                    dense_latency
-                    + bm25_latency
-                )
+                components = {
+                    "bm25_retrieval_seconds": bm25_latency,
+                    "dense_retrieval_seconds": dense_latency,
+                    "feature_extraction_seconds": 0.0,
+                    "adaptive_prediction_seconds": 0.0,
+                    "fusion_seconds": 0.0,
+                }
+                if method == "RRF":
+                    components["fusion_seconds"] = rrf_latency
+                elif method == "Fixed Hybrid (0.50)":
+                    components["fusion_seconds"] = fixed_latency
+                else:
+                    components["feature_extraction_seconds"] = feature_latency
+                    components["adaptive_prediction_seconds"] = prediction_latency
+                    components["fusion_seconds"] = adaptive_latency
+
+            latency = sum(components.values())
 
             p = precision_at_k(
                 results,
@@ -803,6 +973,30 @@ def evaluate():
                     n,
             }
 
+            query_method_rows.append(
+                {
+                    "query_id": row["query_id"],
+                    "domain": domain,
+                    "method": method,
+                    "precision_at_10": p,
+                    "recall_at_10": r,
+                    "mrr": m,
+                    "ndcg_at_10": n,
+                    "latency_seconds": latency,
+                }
+            )
+            timing_rows.append(
+                {
+                    "query_id": row["query_id"],
+                    "domain": domain,
+                    "method": method,
+                    **components,
+                    "total_pipeline_seconds": latency,
+                    "reranking_seconds": 0.0,
+                    "generation_seconds": 0.0,
+                }
+            )
+
         comparison_rows.append(
             {
                 "query_id":
@@ -816,7 +1010,7 @@ def evaluate():
 
                 "fixed_mrr":
                     query_metrics[
-                        "Fixed Hybrid"
+                        "Fixed Hybrid (0.50)"
                     ]["mrr"],
 
                 "adaptive_mrr":
@@ -826,7 +1020,7 @@ def evaluate():
 
                 "fixed_ndcg":
                     query_metrics[
-                        "Fixed Hybrid"
+                        "Fixed Hybrid (0.50)"
                     ]["ndcg"],
 
                 "adaptive_ndcg":
@@ -836,7 +1030,7 @@ def evaluate():
 
                 "fixed_precision":
                     query_metrics[
-                        "Fixed Hybrid"
+                        "Fixed Hybrid (0.50)"
                     ]["precision"],
 
                 "adaptive_precision":
@@ -846,7 +1040,7 @@ def evaluate():
 
                 "fixed_recall":
                     query_metrics[
-                        "Fixed Hybrid"
+                        "Fixed Hybrid (0.50)"
                     ]["recall"],
 
                 "adaptive_recall":
@@ -863,8 +1057,15 @@ def evaluate():
     # ========================================================
 
     summary_path = (
-        RESULTS_DIR
-        / "v4_actual_summary.csv"
+        run_dir
+        / "corrected_v4_summary.csv"
+    )
+    component_names = (
+        "bm25_retrieval_seconds",
+        "dense_retrieval_seconds",
+        "feature_extraction_seconds",
+        "adaptive_prediction_seconds",
+        "fusion_seconds",
     )
 
     with open(
@@ -884,6 +1085,11 @@ def evaluate():
                 "recall_at_10",
                 "mrr",
                 "ndcg_at_10",
+                "mean_bm25_retrieval_seconds",
+                "mean_dense_retrieval_seconds",
+                "mean_feature_extraction_seconds",
+                "mean_adaptive_prediction_seconds",
+                "mean_fusion_seconds",
                 "latency_seconds",
             ]
         )
@@ -892,6 +1098,11 @@ def evaluate():
 
             data = totals[method]
             count = data["queries"]
+            method_timings = [
+                timing
+                for timing in timing_rows
+                if timing["method"] == method
+            ]
 
             writer.writerow(
                 [
@@ -901,6 +1112,10 @@ def evaluate():
                     data["recall"] / count,
                     data["mrr"] / count,
                     data["ndcg"] / count,
+                    *[
+                        sum(item[name] for item in method_timings) / count
+                        for name in component_names
+                    ],
                     data["latency"] / count,
                 ]
             )
@@ -910,8 +1125,8 @@ def evaluate():
     # ========================================================
 
     domain_path = (
-        RESULTS_DIR
-        / "v4_actual_domain_summary.csv"
+        run_dir
+        / "corrected_v4_domain_summary.csv"
     )
 
     with open(
@@ -932,6 +1147,11 @@ def evaluate():
                 "recall_at_10",
                 "mrr",
                 "ndcg_at_10",
+                "mean_bm25_retrieval_seconds",
+                "mean_dense_retrieval_seconds",
+                "mean_feature_extraction_seconds",
+                "mean_adaptive_prediction_seconds",
+                "mean_fusion_seconds",
                 "latency_seconds",
             ]
         )
@@ -947,6 +1167,12 @@ def evaluate():
                 ][method]
 
                 count = data["queries"]
+                domain_method_timings = [
+                    timing
+                    for timing in timing_rows
+                    if timing["method"] == method
+                    and timing["domain"] == domain
+                ]
 
                 writer.writerow(
                     [
@@ -957,6 +1183,11 @@ def evaluate():
                         data["recall"] / count,
                         data["mrr"] / count,
                         data["ndcg"] / count,
+                        *[
+                            sum(item[name] for item in domain_method_timings)
+                            / count
+                            for name in component_names
+                        ],
                         data["latency"] / count,
                     ]
                 )
@@ -966,8 +1197,8 @@ def evaluate():
     # ========================================================
 
     comparison_path = (
-        RESULTS_DIR
-        / "v4_actual_query_comparison.csv"
+        run_dir
+        / "corrected_v4_adaptive_vs_fixed_query_comparison.csv"
     )
 
     with open(
@@ -995,8 +1226,8 @@ def evaluate():
     # ========================================================
 
     weights_path = (
-        RESULTS_DIR
-        / "v4_actual_weights.csv"
+        run_dir
+        / "corrected_v4_adaptive_weights.csv"
     )
 
     with open(
@@ -1020,6 +1251,34 @@ def evaluate():
         writer.writerows(
             weight_rows
         )
+
+    query_methods_path = run_dir / "corrected_v4_query_methods.csv"
+    with open(
+        query_methods_path,
+        "w",
+        newline="",
+        encoding="utf-8",
+    ) as file:
+        writer = csv.DictWriter(
+            file,
+            fieldnames=query_method_rows[0].keys(),
+        )
+        writer.writeheader()
+        writer.writerows(query_method_rows)
+
+    timings_path = run_dir / "corrected_v4_stage_timings.csv"
+    with open(
+        timings_path,
+        "w",
+        newline="",
+        encoding="utf-8",
+    ) as file:
+        writer = csv.DictWriter(
+            file,
+            fieldnames=timing_rows[0].keys(),
+        )
+        writer.writeheader()
+        writer.writerows(timing_rows)
 
     # ========================================================
     # Improvement Analysis
@@ -1113,8 +1372,8 @@ def evaluate():
             equal_recall += 1
 
     improvement_path = (
-        RESULTS_DIR
-        / "v4_actual_improvement_summary.csv"
+        run_dir
+        / "corrected_v4_improvement_vs_fixed_050.csv"
     )
 
     with open(
@@ -1249,6 +1508,25 @@ def evaluate():
     print("=" * 80)
     print("V4 RICH BENCHMARK COMPLETE")
     print("=" * 80)
+    run_manifest["status"] = "completed"
+    run_manifest["completed_utc"] = datetime.now(timezone.utc).isoformat()
+    run_manifest["outputs"] = [
+        str(path.name)
+        for path in (
+            summary_path,
+            domain_path,
+            comparison_path,
+            weights_path,
+            query_methods_path,
+            timings_path,
+            improvement_path,
+        )
+    ]
+    (run_dir / "run_manifest.json").write_text(
+        json.dumps(run_manifest, indent=2),
+        encoding="utf-8",
+    )
+    print(f"Run output: {run_dir}")
 
     print()
 

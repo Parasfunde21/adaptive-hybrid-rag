@@ -73,10 +73,13 @@ def get_adaptive_v3(query):
     from services.retrieval_feature_service import retrieval_feature_service
 
     retrieval_features = retrieval_feature_service.extract(
+        query=query,
         bm25_scores=bm25_scores,
         dense_distances=dense_distances,
         bm25_docs=bm25_docs,
-        dense_docs=dense_docs
+        dense_docs=dense_docs,
+        bm25_ids=bm25_ids,
+        dense_ids=dense_ids,
     )
 
     # 3. Predict V3 weights

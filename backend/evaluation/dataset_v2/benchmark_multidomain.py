@@ -580,6 +580,7 @@ def adaptive_fusion_from_results(
 
     retrieval_features = (
         retrieval_feature_service.extract(
+            query=query,
 
             bm25_scores=bm25_scores,
 
@@ -587,7 +588,9 @@ def adaptive_fusion_from_results(
 
             bm25_docs=bm25_docs,
 
-            dense_docs=dense_docs
+            dense_docs=dense_docs,
+            bm25_ids=bm25_ids,
+            dense_ids=dense_ids
 
         )
     )
