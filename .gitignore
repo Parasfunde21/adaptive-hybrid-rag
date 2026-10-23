@@ -63,3 +63,7 @@ Thumbs.db
 !backend/evaluation/**/*.py
 !backend/training/*.csv
 
+# Private academic submission materials
+/SUBMISSION_CHECKLIST.md
+/paper_evidence.zip
+/docs/
